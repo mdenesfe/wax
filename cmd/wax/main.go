@@ -382,6 +382,19 @@ func eventPrinter(log *slog.Logger, pngPath string, unmask bool, mediaDir string
 					}()
 				}
 			}
+		case client.AppStateSyncComplete:
+			log.Info("app state synced", "collection", e.Collection, "version", e.Version)
+		case client.AppStateSyncError:
+			log.Error("app state sync error", "collection", e.Collection, "error", e.Err)
+		case client.AppStateChange:
+			if !e.FromFullSync {
+				log.Info("app state change", "collection", e.Collection, "kind", e.Index[0], "removed", e.Removed)
+			}
+		case client.HistorySync:
+			log.Info("history sync", "type", e.Type, "chunk", e.Chunk, "progress", e.Progress,
+				"conversations", e.Conversations, "messages", e.Messages, "push_names", e.PushNames)
+		case client.AccountSync:
+			log.Info("account sync", "changes", e.Changes)
 		case client.GroupUpdate:
 			log.Info("group update", "group", jid(e.JID), "changes", e.Changes)
 		case client.Presence:

@@ -15,7 +15,7 @@ standard library only (`crypto/ecdh`, `crypto/ed25519`, `crypto/aes`,
 | 2 | QR pairing, persistent identity (PostgreSQL) | ✅ done |
 | 3 | Signal protocol, 1:1 text messages | ✅ done |
 | 4 | Groups, media, receipts, presence, calls | ✅ done |
-| 5 | History sync, app state sync | — |
+| 5 | History sync, app state sync | ✅ done |
 | 6 | Multi-instance, REST API, webhooks, queue | — |
 
 ## Layout
@@ -26,6 +26,7 @@ cmd/wax-probe       Phase 1 tool: raw handshake + node logging
 internal/keys        X25519 key pairs, libsignal-compatible Curve25519 signatures
 internal/signal      Signal protocol v3: X3DH, Double Ratchet, Sender Keys, wire formats (pure, no I/O)
 internal/media       media encryption (HKDF keys, AES-CBC + HMAC), upload/download
+internal/appstate    app state sync: LTHash, mutation keys and MACs, patch/snapshot/recovery decoding
 internal/transport   framing, WebSocket, Noise XX handshake, cert chain, encrypted conn
 internal/binary      binary XML nodes: tokens, JIDs, encoder/decoder, masked formatting
 internal/proto       protobuf schemas + generated code (see internal/proto/README.md)

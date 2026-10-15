@@ -131,6 +131,7 @@ func (c *Client) sendDirect(ctx context.Context, s *session, to wabin.JID, id st
 	if err != nil {
 		return res.result(), err
 	}
+	c.storeLiveMessage(ctx, to, ownDevice, id, true, res.Timestamp, "", msg)
 	if res.phash != "" && res.phash != participantListHash(devices) {
 		s.log.Warn("server device list differs from ours; refreshing", "chat", wabin.MaskJID(to))
 		c.devCache.invalidate(to)
@@ -253,6 +254,7 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 	if err != nil {
 		return res.result(), err
 	}
+	c.storeLiveMessage(ctx, group, ownDevice, id, true, res.Timestamp, "", msg)
 	// Only now do these devices verifiably have our key.
 	var deliveredAddrs []string
 	for i, d := range need {

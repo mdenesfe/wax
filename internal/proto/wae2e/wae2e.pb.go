@@ -25,6 +25,83 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type PeerDataOperationRequestType int32
+
+const (
+	PeerDataOperationRequestType_UPLOAD_STICKER                          PeerDataOperationRequestType = 0
+	PeerDataOperationRequestType_SEND_RECENT_STICKER_BOOTSTRAP           PeerDataOperationRequestType = 1
+	PeerDataOperationRequestType_GENERATE_LINK_PREVIEW                   PeerDataOperationRequestType = 2
+	PeerDataOperationRequestType_HISTORY_SYNC_ON_DEMAND                  PeerDataOperationRequestType = 3
+	PeerDataOperationRequestType_PLACEHOLDER_MESSAGE_RESEND              PeerDataOperationRequestType = 4
+	PeerDataOperationRequestType_WAFFLE_LINKING_NONCE_FETCH              PeerDataOperationRequestType = 5
+	PeerDataOperationRequestType_FULL_HISTORY_SYNC_ON_DEMAND             PeerDataOperationRequestType = 6
+	PeerDataOperationRequestType_COMPANION_META_NONCE_FETCH              PeerDataOperationRequestType = 7
+	PeerDataOperationRequestType_COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY PeerDataOperationRequestType = 8
+)
+
+// Enum value maps for PeerDataOperationRequestType.
+var (
+	PeerDataOperationRequestType_name = map[int32]string{
+		0: "UPLOAD_STICKER",
+		1: "SEND_RECENT_STICKER_BOOTSTRAP",
+		2: "GENERATE_LINK_PREVIEW",
+		3: "HISTORY_SYNC_ON_DEMAND",
+		4: "PLACEHOLDER_MESSAGE_RESEND",
+		5: "WAFFLE_LINKING_NONCE_FETCH",
+		6: "FULL_HISTORY_SYNC_ON_DEMAND",
+		7: "COMPANION_META_NONCE_FETCH",
+		8: "COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY",
+	}
+	PeerDataOperationRequestType_value = map[string]int32{
+		"UPLOAD_STICKER":                          0,
+		"SEND_RECENT_STICKER_BOOTSTRAP":           1,
+		"GENERATE_LINK_PREVIEW":                   2,
+		"HISTORY_SYNC_ON_DEMAND":                  3,
+		"PLACEHOLDER_MESSAGE_RESEND":              4,
+		"WAFFLE_LINKING_NONCE_FETCH":              5,
+		"FULL_HISTORY_SYNC_ON_DEMAND":             6,
+		"COMPANION_META_NONCE_FETCH":              7,
+		"COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY": 8,
+	}
+)
+
+func (x PeerDataOperationRequestType) Enum() *PeerDataOperationRequestType {
+	p := new(PeerDataOperationRequestType)
+	*p = x
+	return p
+}
+
+func (x PeerDataOperationRequestType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PeerDataOperationRequestType) Descriptor() protoreflect.EnumDescriptor {
+	return file_wae2e_wae2e_proto_enumTypes[0].Descriptor()
+}
+
+func (PeerDataOperationRequestType) Type() protoreflect.EnumType {
+	return &file_wae2e_wae2e_proto_enumTypes[0]
+}
+
+func (x PeerDataOperationRequestType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Do not use.
+func (x *PeerDataOperationRequestType) UnmarshalJSON(b []byte) error {
+	num, err := protoimpl.X.UnmarshalJSONEnum(x.Descriptor(), b)
+	if err != nil {
+		return err
+	}
+	*x = PeerDataOperationRequestType(num)
+	return nil
+}
+
+// Deprecated: Use PeerDataOperationRequestType.Descriptor instead.
+func (PeerDataOperationRequestType) EnumDescriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{0}
+}
+
 type ProtocolMessage_Type int32
 
 const (
@@ -98,11 +175,11 @@ func (x ProtocolMessage_Type) String() string {
 }
 
 func (ProtocolMessage_Type) Descriptor() protoreflect.EnumDescriptor {
-	return file_wae2e_wae2e_proto_enumTypes[0].Descriptor()
+	return file_wae2e_wae2e_proto_enumTypes[1].Descriptor()
 }
 
 func (ProtocolMessage_Type) Type() protoreflect.EnumType {
-	return &file_wae2e_wae2e_proto_enumTypes[0]
+	return &file_wae2e_wae2e_proto_enumTypes[1]
 }
 
 func (x ProtocolMessage_Type) Number() protoreflect.EnumNumber {
@@ -749,13 +826,18 @@ func (x *MessageContextInfo) GetPaddingBytes() []byte {
 }
 
 type ProtocolMessage struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           *MessageKey            `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
-	Type          *ProtocolMessage_Type  `protobuf:"varint,2,opt,name=type,enum=wax.wae2e.ProtocolMessage_Type" json:"type,omitempty"`
-	EditedMessage *Message               `protobuf:"bytes,14,opt,name=editedMessage" json:"editedMessage,omitempty"`
-	TimestampMS   *int64                 `protobuf:"varint,15,opt,name=timestampMS" json:"timestampMS,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                                   protoimpl.MessageState                   `protogen:"open.v1"`
+	Key                                     *MessageKey                              `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
+	Type                                    *ProtocolMessage_Type                    `protobuf:"varint,2,opt,name=type,enum=wax.wae2e.ProtocolMessage_Type" json:"type,omitempty"`
+	HistorySyncNotification                 *HistorySyncNotification                 `protobuf:"bytes,6,opt,name=historySyncNotification" json:"historySyncNotification,omitempty"`
+	AppStateSyncKeyShare                    *AppStateSyncKeyShare                    `protobuf:"bytes,7,opt,name=appStateSyncKeyShare" json:"appStateSyncKeyShare,omitempty"`
+	AppStateSyncKeyRequest                  *AppStateSyncKeyRequest                  `protobuf:"bytes,8,opt,name=appStateSyncKeyRequest" json:"appStateSyncKeyRequest,omitempty"`
+	EditedMessage                           *Message                                 `protobuf:"bytes,14,opt,name=editedMessage" json:"editedMessage,omitempty"`
+	TimestampMS                             *int64                                   `protobuf:"varint,15,opt,name=timestampMS" json:"timestampMS,omitempty"`
+	PeerDataOperationRequestMessage         *PeerDataOperationRequestMessage         `protobuf:"bytes,16,opt,name=peerDataOperationRequestMessage" json:"peerDataOperationRequestMessage,omitempty"`
+	PeerDataOperationRequestResponseMessage *PeerDataOperationRequestResponseMessage `protobuf:"bytes,17,opt,name=peerDataOperationRequestResponseMessage" json:"peerDataOperationRequestResponseMessage,omitempty"`
+	unknownFields                           protoimpl.UnknownFields
+	sizeCache                               protoimpl.SizeCache
 }
 
 func (x *ProtocolMessage) Reset() {
@@ -802,6 +884,27 @@ func (x *ProtocolMessage) GetType() ProtocolMessage_Type {
 	return ProtocolMessage_TYPE_UNKNOWN
 }
 
+func (x *ProtocolMessage) GetHistorySyncNotification() *HistorySyncNotification {
+	if x != nil {
+		return x.HistorySyncNotification
+	}
+	return nil
+}
+
+func (x *ProtocolMessage) GetAppStateSyncKeyShare() *AppStateSyncKeyShare {
+	if x != nil {
+		return x.AppStateSyncKeyShare
+	}
+	return nil
+}
+
+func (x *ProtocolMessage) GetAppStateSyncKeyRequest() *AppStateSyncKeyRequest {
+	if x != nil {
+		return x.AppStateSyncKeyRequest
+	}
+	return nil
+}
+
 func (x *ProtocolMessage) GetEditedMessage() *Message {
 	if x != nil {
 		return x.EditedMessage
@@ -814,6 +917,577 @@ func (x *ProtocolMessage) GetTimestampMS() int64 {
 		return *x.TimestampMS
 	}
 	return 0
+}
+
+func (x *ProtocolMessage) GetPeerDataOperationRequestMessage() *PeerDataOperationRequestMessage {
+	if x != nil {
+		return x.PeerDataOperationRequestMessage
+	}
+	return nil
+}
+
+func (x *ProtocolMessage) GetPeerDataOperationRequestResponseMessage() *PeerDataOperationRequestResponseMessage {
+	if x != nil {
+		return x.PeerDataOperationRequestResponseMessage
+	}
+	return nil
+}
+
+// Requests to our own primary device.
+type PeerDataOperationRequestMessage struct {
+	state                               protoimpl.MessageState                                               `protogen:"open.v1"`
+	PeerDataOperationRequestType        *PeerDataOperationRequestType                                        `protobuf:"varint,1,opt,name=peerDataOperationRequestType,enum=wax.wae2e.PeerDataOperationRequestType" json:"peerDataOperationRequestType,omitempty"`
+	SyncdCollectionFatalRecoveryRequest *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest `protobuf:"bytes,7,opt,name=syncdCollectionFatalRecoveryRequest" json:"syncdCollectionFatalRecoveryRequest,omitempty"`
+	unknownFields                       protoimpl.UnknownFields
+	sizeCache                           protoimpl.SizeCache
+}
+
+func (x *PeerDataOperationRequestMessage) Reset() {
+	*x = PeerDataOperationRequestMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerDataOperationRequestMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerDataOperationRequestMessage) ProtoMessage() {}
+
+func (x *PeerDataOperationRequestMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerDataOperationRequestMessage.ProtoReflect.Descriptor instead.
+func (*PeerDataOperationRequestMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *PeerDataOperationRequestMessage) GetPeerDataOperationRequestType() PeerDataOperationRequestType {
+	if x != nil && x.PeerDataOperationRequestType != nil {
+		return *x.PeerDataOperationRequestType
+	}
+	return PeerDataOperationRequestType_UPLOAD_STICKER
+}
+
+func (x *PeerDataOperationRequestMessage) GetSyncdCollectionFatalRecoveryRequest() *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest {
+	if x != nil {
+		return x.SyncdCollectionFatalRecoveryRequest
+	}
+	return nil
+}
+
+type PeerDataOperationRequestResponseMessage struct {
+	state                        protoimpl.MessageState                                             `protogen:"open.v1"`
+	PeerDataOperationRequestType *PeerDataOperationRequestType                                      `protobuf:"varint,1,opt,name=peerDataOperationRequestType,enum=wax.wae2e.PeerDataOperationRequestType" json:"peerDataOperationRequestType,omitempty"`
+	StanzaID                     *string                                                            `protobuf:"bytes,2,opt,name=stanzaID" json:"stanzaID,omitempty"`
+	PeerDataOperationResult      []*PeerDataOperationRequestResponseMessage_PeerDataOperationResult `protobuf:"bytes,3,rep,name=peerDataOperationResult" json:"peerDataOperationResult,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
+}
+
+func (x *PeerDataOperationRequestResponseMessage) Reset() {
+	*x = PeerDataOperationRequestResponseMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerDataOperationRequestResponseMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerDataOperationRequestResponseMessage) ProtoMessage() {}
+
+func (x *PeerDataOperationRequestResponseMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerDataOperationRequestResponseMessage.ProtoReflect.Descriptor instead.
+func (*PeerDataOperationRequestResponseMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PeerDataOperationRequestResponseMessage) GetPeerDataOperationRequestType() PeerDataOperationRequestType {
+	if x != nil && x.PeerDataOperationRequestType != nil {
+		return *x.PeerDataOperationRequestType
+	}
+	return PeerDataOperationRequestType_UPLOAD_STICKER
+}
+
+func (x *PeerDataOperationRequestResponseMessage) GetStanzaID() string {
+	if x != nil && x.StanzaID != nil {
+		return *x.StanzaID
+	}
+	return ""
+}
+
+func (x *PeerDataOperationRequestResponseMessage) GetPeerDataOperationResult() []*PeerDataOperationRequestResponseMessage_PeerDataOperationResult {
+	if x != nil {
+		return x.PeerDataOperationResult
+	}
+	return nil
+}
+
+type AppStateSyncKeyShare struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Keys          []*AppStateSyncKey     `protobuf:"bytes,1,rep,name=keys" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyShare) Reset() {
+	*x = AppStateSyncKeyShare{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyShare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyShare) ProtoMessage() {}
+
+func (x *AppStateSyncKeyShare) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyShare.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyShare) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AppStateSyncKeyShare) GetKeys() []*AppStateSyncKey {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+type AppStateSyncKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyID         *AppStateSyncKeyId     `protobuf:"bytes,1,opt,name=keyID" json:"keyID,omitempty"`
+	KeyData       *AppStateSyncKeyData   `protobuf:"bytes,2,opt,name=keyData" json:"keyData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKey) Reset() {
+	*x = AppStateSyncKey{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKey) ProtoMessage() {}
+
+func (x *AppStateSyncKey) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKey.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKey) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *AppStateSyncKey) GetKeyID() *AppStateSyncKeyId {
+	if x != nil {
+		return x.KeyID
+	}
+	return nil
+}
+
+func (x *AppStateSyncKey) GetKeyData() *AppStateSyncKeyData {
+	if x != nil {
+		return x.KeyData
+	}
+	return nil
+}
+
+type AppStateSyncKeyId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyID         []byte                 `protobuf:"bytes,1,opt,name=keyID" json:"keyID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyId) Reset() {
+	*x = AppStateSyncKeyId{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyId) ProtoMessage() {}
+
+func (x *AppStateSyncKeyId) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyId.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyId) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *AppStateSyncKeyId) GetKeyID() []byte {
+	if x != nil {
+		return x.KeyID
+	}
+	return nil
+}
+
+type AppStateSyncKeyData struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	KeyData       []byte                      `protobuf:"bytes,1,opt,name=keyData" json:"keyData,omitempty"`
+	Fingerprint   *AppStateSyncKeyFingerprint `protobuf:"bytes,2,opt,name=fingerprint" json:"fingerprint,omitempty"`
+	Timestamp     *int64                      `protobuf:"varint,3,opt,name=timestamp" json:"timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyData) Reset() {
+	*x = AppStateSyncKeyData{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyData) ProtoMessage() {}
+
+func (x *AppStateSyncKeyData) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyData.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyData) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *AppStateSyncKeyData) GetKeyData() []byte {
+	if x != nil {
+		return x.KeyData
+	}
+	return nil
+}
+
+func (x *AppStateSyncKeyData) GetFingerprint() *AppStateSyncKeyFingerprint {
+	if x != nil {
+		return x.Fingerprint
+	}
+	return nil
+}
+
+func (x *AppStateSyncKeyData) GetTimestamp() int64 {
+	if x != nil && x.Timestamp != nil {
+		return *x.Timestamp
+	}
+	return 0
+}
+
+type AppStateSyncKeyFingerprint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RawID         *uint32                `protobuf:"varint,1,opt,name=rawID" json:"rawID,omitempty"`
+	CurrentIndex  *uint32                `protobuf:"varint,2,opt,name=currentIndex" json:"currentIndex,omitempty"`
+	DeviceIndexes []uint32               `protobuf:"varint,3,rep,packed,name=deviceIndexes" json:"deviceIndexes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyFingerprint) Reset() {
+	*x = AppStateSyncKeyFingerprint{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyFingerprint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyFingerprint) ProtoMessage() {}
+
+func (x *AppStateSyncKeyFingerprint) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyFingerprint.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyFingerprint) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *AppStateSyncKeyFingerprint) GetRawID() uint32 {
+	if x != nil && x.RawID != nil {
+		return *x.RawID
+	}
+	return 0
+}
+
+func (x *AppStateSyncKeyFingerprint) GetCurrentIndex() uint32 {
+	if x != nil && x.CurrentIndex != nil {
+		return *x.CurrentIndex
+	}
+	return 0
+}
+
+func (x *AppStateSyncKeyFingerprint) GetDeviceIndexes() []uint32 {
+	if x != nil {
+		return x.DeviceIndexes
+	}
+	return nil
+}
+
+type AppStateSyncKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyIDs        []*AppStateSyncKeyId   `protobuf:"bytes,1,rep,name=keyIDs" json:"keyIDs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyRequest) Reset() {
+	*x = AppStateSyncKeyRequest{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyRequest) ProtoMessage() {}
+
+func (x *AppStateSyncKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyRequest.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyRequest) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *AppStateSyncKeyRequest) GetKeyIDs() []*AppStateSyncKeyId {
+	if x != nil {
+		return x.KeyIDs
+	}
+	return nil
+}
+
+type HistorySyncNotification struct {
+	state                             protoimpl.MessageState `protogen:"open.v1"`
+	FileSHA256                        []byte                 `protobuf:"bytes,1,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileLength                        *uint64                `protobuf:"varint,2,opt,name=fileLength" json:"fileLength,omitempty"`
+	MediaKey                          []byte                 `protobuf:"bytes,3,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	FileEncSHA256                     []byte                 `protobuf:"bytes,4,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	DirectPath                        *string                `protobuf:"bytes,5,opt,name=directPath" json:"directPath,omitempty"`
+	SyncType                          *int32                 `protobuf:"varint,6,opt,name=syncType" json:"syncType,omitempty"` // HistorySyncType
+	ChunkOrder                        *uint32                `protobuf:"varint,7,opt,name=chunkOrder" json:"chunkOrder,omitempty"`
+	OriginalMessageID                 *string                `protobuf:"bytes,8,opt,name=originalMessageID" json:"originalMessageID,omitempty"`
+	Progress                          *uint32                `protobuf:"varint,9,opt,name=progress" json:"progress,omitempty"`
+	OldestMsgInChunkTimestampSec      *int64                 `protobuf:"varint,10,opt,name=oldestMsgInChunkTimestampSec" json:"oldestMsgInChunkTimestampSec,omitempty"`
+	InitialHistBootstrapInlinePayload []byte                 `protobuf:"bytes,11,opt,name=initialHistBootstrapInlinePayload" json:"initialHistBootstrapInlinePayload,omitempty"`
+	PeerDataRequestSessionID          *string                `protobuf:"bytes,12,opt,name=peerDataRequestSessionID" json:"peerDataRequestSessionID,omitempty"`
+	EncHandle                         *string                `protobuf:"bytes,14,opt,name=encHandle" json:"encHandle,omitempty"`
+	unknownFields                     protoimpl.UnknownFields
+	sizeCache                         protoimpl.SizeCache
+}
+
+func (x *HistorySyncNotification) Reset() {
+	*x = HistorySyncNotification{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistorySyncNotification) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistorySyncNotification) ProtoMessage() {}
+
+func (x *HistorySyncNotification) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistorySyncNotification.ProtoReflect.Descriptor instead.
+func (*HistorySyncNotification) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *HistorySyncNotification) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *HistorySyncNotification) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *HistorySyncNotification) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *HistorySyncNotification) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *HistorySyncNotification) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *HistorySyncNotification) GetSyncType() int32 {
+	if x != nil && x.SyncType != nil {
+		return *x.SyncType
+	}
+	return 0
+}
+
+func (x *HistorySyncNotification) GetChunkOrder() uint32 {
+	if x != nil && x.ChunkOrder != nil {
+		return *x.ChunkOrder
+	}
+	return 0
+}
+
+func (x *HistorySyncNotification) GetOriginalMessageID() string {
+	if x != nil && x.OriginalMessageID != nil {
+		return *x.OriginalMessageID
+	}
+	return ""
+}
+
+func (x *HistorySyncNotification) GetProgress() uint32 {
+	if x != nil && x.Progress != nil {
+		return *x.Progress
+	}
+	return 0
+}
+
+func (x *HistorySyncNotification) GetOldestMsgInChunkTimestampSec() int64 {
+	if x != nil && x.OldestMsgInChunkTimestampSec != nil {
+		return *x.OldestMsgInChunkTimestampSec
+	}
+	return 0
+}
+
+func (x *HistorySyncNotification) GetInitialHistBootstrapInlinePayload() []byte {
+	if x != nil {
+		return x.InitialHistBootstrapInlinePayload
+	}
+	return nil
+}
+
+func (x *HistorySyncNotification) GetPeerDataRequestSessionID() string {
+	if x != nil && x.PeerDataRequestSessionID != nil {
+		return *x.PeerDataRequestSessionID
+	}
+	return ""
+}
+
+func (x *HistorySyncNotification) GetEncHandle() string {
+	if x != nil && x.EncHandle != nil {
+		return *x.EncHandle
+	}
+	return ""
 }
 
 // Media messages. Field numbers differ between the types; they are copied
@@ -840,7 +1514,7 @@ type ImageMessage struct {
 
 func (x *ImageMessage) Reset() {
 	*x = ImageMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	mi := &file_wae2e_wae2e_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -852,7 +1526,7 @@ func (x *ImageMessage) String() string {
 func (*ImageMessage) ProtoMessage() {}
 
 func (x *ImageMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	mi := &file_wae2e_wae2e_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -865,7 +1539,7 @@ func (x *ImageMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageMessage.ProtoReflect.Descriptor instead.
 func (*ImageMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{9}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ImageMessage) GetURL() string {
@@ -990,7 +1664,7 @@ type VideoMessage struct {
 
 func (x *VideoMessage) Reset() {
 	*x = VideoMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	mi := &file_wae2e_wae2e_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1676,7 @@ func (x *VideoMessage) String() string {
 func (*VideoMessage) ProtoMessage() {}
 
 func (x *VideoMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	mi := &file_wae2e_wae2e_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1689,7 @@ func (x *VideoMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VideoMessage.ProtoReflect.Descriptor instead.
 func (*VideoMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{10}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *VideoMessage) GetURL() string {
@@ -1151,7 +1825,7 @@ type AudioMessage struct {
 
 func (x *AudioMessage) Reset() {
 	*x = AudioMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	mi := &file_wae2e_wae2e_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1163,7 +1837,7 @@ func (x *AudioMessage) String() string {
 func (*AudioMessage) ProtoMessage() {}
 
 func (x *AudioMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	mi := &file_wae2e_wae2e_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1176,7 +1850,7 @@ func (x *AudioMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AudioMessage.ProtoReflect.Descriptor instead.
 func (*AudioMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{11}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AudioMessage) GetURL() string {
@@ -1292,7 +1966,7 @@ type DocumentMessage struct {
 
 func (x *DocumentMessage) Reset() {
 	*x = DocumentMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	mi := &file_wae2e_wae2e_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1304,7 +1978,7 @@ func (x *DocumentMessage) String() string {
 func (*DocumentMessage) ProtoMessage() {}
 
 func (x *DocumentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	mi := &file_wae2e_wae2e_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1317,7 +1991,7 @@ func (x *DocumentMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentMessage.ProtoReflect.Descriptor instead.
 func (*DocumentMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{12}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DocumentMessage) GetURL() string {
@@ -1438,7 +2112,7 @@ type StickerMessage struct {
 
 func (x *StickerMessage) Reset() {
 	*x = StickerMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	mi := &file_wae2e_wae2e_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1450,7 +2124,7 @@ func (x *StickerMessage) String() string {
 func (*StickerMessage) ProtoMessage() {}
 
 func (x *StickerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	mi := &file_wae2e_wae2e_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1463,7 +2137,7 @@ func (x *StickerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StickerMessage.ProtoReflect.Descriptor instead.
 func (*StickerMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{13}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *StickerMessage) GetURL() string {
@@ -1561,7 +2235,7 @@ type ReactionMessage struct {
 
 func (x *ReactionMessage) Reset() {
 	*x = ReactionMessage{}
-	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	mi := &file_wae2e_wae2e_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1573,7 +2247,7 @@ func (x *ReactionMessage) String() string {
 func (*ReactionMessage) ProtoMessage() {}
 
 func (x *ReactionMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	mi := &file_wae2e_wae2e_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1586,7 +2260,7 @@ func (x *ReactionMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactionMessage.ProtoReflect.Descriptor instead.
 func (*ReactionMessage) Descriptor() ([]byte, []int) {
-	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{14}
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ReactionMessage) GetKey() *MessageKey {
@@ -1608,6 +2282,155 @@ func (x *ReactionMessage) GetSenderTimestampMS() int64 {
 		return *x.SenderTimestampMS
 	}
 	return 0
+}
+
+type PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	CollectionName *string                `protobuf:"bytes,1,opt,name=collectionName" json:"collectionName,omitempty"`
+	Timestamp      *int64                 `protobuf:"varint,2,opt,name=timestamp" json:"timestamp,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) Reset() {
+	*x = PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) ProtoMessage() {}
+
+func (x *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest.ProtoReflect.Descriptor instead.
+func (*PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{9, 0}
+}
+
+func (x *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) GetCollectionName() string {
+	if x != nil && x.CollectionName != nil {
+		return *x.CollectionName
+	}
+	return ""
+}
+
+func (x *PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest) GetTimestamp() int64 {
+	if x != nil && x.Timestamp != nil {
+		return *x.Timestamp
+	}
+	return 0
+}
+
+type PeerDataOperationRequestResponseMessage_PeerDataOperationResult struct {
+	state                              protoimpl.MessageState                                                                              `protogen:"open.v1"`
+	SyncdSnapshotFatalRecoveryResponse *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse `protobuf:"bytes,8,opt,name=syncdSnapshotFatalRecoveryResponse" json:"syncdSnapshotFatalRecoveryResponse,omitempty"`
+	unknownFields                      protoimpl.UnknownFields
+	sizeCache                          protoimpl.SizeCache
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult) Reset() {
+	*x = PeerDataOperationRequestResponseMessage_PeerDataOperationResult{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerDataOperationRequestResponseMessage_PeerDataOperationResult) ProtoMessage() {}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerDataOperationRequestResponseMessage_PeerDataOperationResult.ProtoReflect.Descriptor instead.
+func (*PeerDataOperationRequestResponseMessage_PeerDataOperationResult) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{10, 0}
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult) GetSyncdSnapshotFatalRecoveryResponse() *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse {
+	if x != nil {
+		return x.SyncdSnapshotFatalRecoveryResponse
+	}
+	return nil
+}
+
+type PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CollectionSnapshot []byte                 `protobuf:"bytes,1,opt,name=collectionSnapshot" json:"collectionSnapshot,omitempty"` // serialized SyncdSnapshotRecovery
+	IsCompressed       *bool                  `protobuf:"varint,2,opt,name=isCompressed" json:"isCompressed,omitempty"`            // gzip
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) Reset() {
+	*x = PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) ProtoMessage() {
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse.ProtoReflect.Descriptor instead.
+func (*PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{10, 0, 0}
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) GetCollectionSnapshot() []byte {
+	if x != nil {
+		return x.CollectionSnapshot
+	}
+	return nil
+}
+
+func (x *PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse) GetIsCompressed() bool {
+	if x != nil && x.IsCompressed != nil {
+		return *x.IsCompressed
+	}
+	return false
 }
 
 var File_wae2e_wae2e_proto protoreflect.FileDescriptor
@@ -1666,12 +2489,17 @@ const file_wae2e_wae2e_proto_rawDesc = "" +
 	"\x05phash\x18\x03 \x01(\tR\x05phash\"^\n" +
 	"\x12MessageContextInfo\x12$\n" +
 	"\rmessageSecret\x18\x03 \x01(\fR\rmessageSecret\x12\"\n" +
-	"\fpaddingBytes\x18\x04 \x01(\fR\fpaddingBytes\"\xae\x05\n" +
+	"\fpaddingBytes\x18\x04 \x01(\fR\fpaddingBytes\"\xc1\t\n" +
 	"\x0fProtocolMessage\x12'\n" +
 	"\x03key\x18\x01 \x01(\v2\x15.wax.wae2e.MessageKeyR\x03key\x123\n" +
-	"\x04type\x18\x02 \x01(\x0e2\x1f.wax.wae2e.ProtocolMessage.TypeR\x04type\x128\n" +
+	"\x04type\x18\x02 \x01(\x0e2\x1f.wax.wae2e.ProtocolMessage.TypeR\x04type\x12\\\n" +
+	"\x17historySyncNotification\x18\x06 \x01(\v2\".wax.wae2e.HistorySyncNotificationR\x17historySyncNotification\x12S\n" +
+	"\x14appStateSyncKeyShare\x18\a \x01(\v2\x1f.wax.wae2e.AppStateSyncKeyShareR\x14appStateSyncKeyShare\x12Y\n" +
+	"\x16appStateSyncKeyRequest\x18\b \x01(\v2!.wax.wae2e.AppStateSyncKeyRequestR\x16appStateSyncKeyRequest\x128\n" +
 	"\reditedMessage\x18\x0e \x01(\v2\x12.wax.wae2e.MessageR\reditedMessage\x12 \n" +
-	"\vtimestampMS\x18\x0f \x01(\x03R\vtimestampMS\"\xe0\x03\n" +
+	"\vtimestampMS\x18\x0f \x01(\x03R\vtimestampMS\x12t\n" +
+	"\x1fpeerDataOperationRequestMessage\x18\x10 \x01(\v2*.wax.wae2e.PeerDataOperationRequestMessageR\x1fpeerDataOperationRequestMessage\x12\x8c\x01\n" +
+	"'peerDataOperationRequestResponseMessage\x18\x11 \x01(\v22.wax.wae2e.PeerDataOperationRequestResponseMessageR'peerDataOperationRequestResponseMessage\"\xe0\x03\n" +
 	"\x04Type\x12\x19\n" +
 	"\fTYPE_UNKNOWN\x10\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01\x12\n" +
 	"\n" +
@@ -1689,7 +2517,62 @@ const file_wae2e_wae2e_proto_rawDesc = "" +
 	"\fMESSAGE_EDIT\x10\x0e\x12'\n" +
 	"#PEER_DATA_OPERATION_REQUEST_MESSAGE\x10\x10\x120\n" +
 	",PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE\x10\x11\x12\x1e\n" +
-	"\x1aLID_MIGRATION_MAPPING_SYNC\x10\x16\"\xd0\x03\n" +
+	"\x1aLID_MIGRATION_MAPPING_SYNC\x10\x16\"\x9e\x03\n" +
+	"\x1fPeerDataOperationRequestMessage\x12k\n" +
+	"\x1cpeerDataOperationRequestType\x18\x01 \x01(\x0e2'.wax.wae2e.PeerDataOperationRequestTypeR\x1cpeerDataOperationRequestType\x12\xa0\x01\n" +
+	"#syncdCollectionFatalRecoveryRequest\x18\a \x01(\v2N.wax.wae2e.PeerDataOperationRequestMessage.SyncDCollectionFatalRecoveryRequestR#syncdCollectionFatalRecoveryRequest\x1ak\n" +
+	"#SyncDCollectionFatalRecoveryRequest\x12&\n" +
+	"\x0ecollectionName\x18\x01 \x01(\tR\x0ecollectionName\x12\x1c\n" +
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"\x8f\x05\n" +
+	"'PeerDataOperationRequestResponseMessage\x12k\n" +
+	"\x1cpeerDataOperationRequestType\x18\x01 \x01(\x0e2'.wax.wae2e.PeerDataOperationRequestTypeR\x1cpeerDataOperationRequestType\x12\x1a\n" +
+	"\bstanzaID\x18\x02 \x01(\tR\bstanzaID\x12\x84\x01\n" +
+	"\x17peerDataOperationResult\x18\x03 \x03(\v2J.wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResultR\x17peerDataOperationResult\x1a\xd3\x02\n" +
+	"\x17PeerDataOperationResult\x12\xbd\x01\n" +
+	"\"syncdSnapshotFatalRecoveryResponse\x18\b \x01(\v2m.wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult.SyncDSnapshotFatalRecoveryResponseR\"syncdSnapshotFatalRecoveryResponse\x1ax\n" +
+	"\"SyncDSnapshotFatalRecoveryResponse\x12.\n" +
+	"\x12collectionSnapshot\x18\x01 \x01(\fR\x12collectionSnapshot\x12\"\n" +
+	"\fisCompressed\x18\x02 \x01(\bR\fisCompressed\"F\n" +
+	"\x14AppStateSyncKeyShare\x12.\n" +
+	"\x04keys\x18\x01 \x03(\v2\x1a.wax.wae2e.AppStateSyncKeyR\x04keys\"\x7f\n" +
+	"\x0fAppStateSyncKey\x122\n" +
+	"\x05keyID\x18\x01 \x01(\v2\x1c.wax.wae2e.AppStateSyncKeyIdR\x05keyID\x128\n" +
+	"\akeyData\x18\x02 \x01(\v2\x1e.wax.wae2e.AppStateSyncKeyDataR\akeyData\")\n" +
+	"\x11AppStateSyncKeyId\x12\x14\n" +
+	"\x05keyID\x18\x01 \x01(\fR\x05keyID\"\x96\x01\n" +
+	"\x13AppStateSyncKeyData\x12\x18\n" +
+	"\akeyData\x18\x01 \x01(\fR\akeyData\x12G\n" +
+	"\vfingerprint\x18\x02 \x01(\v2%.wax.wae2e.AppStateSyncKeyFingerprintR\vfingerprint\x12\x1c\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x80\x01\n" +
+	"\x1aAppStateSyncKeyFingerprint\x12\x14\n" +
+	"\x05rawID\x18\x01 \x01(\rR\x05rawID\x12\"\n" +
+	"\fcurrentIndex\x18\x02 \x01(\rR\fcurrentIndex\x12(\n" +
+	"\rdeviceIndexes\x18\x03 \x03(\rB\x02\x10\x01R\rdeviceIndexes\"N\n" +
+	"\x16AppStateSyncKeyRequest\x124\n" +
+	"\x06keyIDs\x18\x01 \x03(\v2\x1c.wax.wae2e.AppStateSyncKeyIdR\x06keyIDs\"\xad\x04\n" +
+	"\x17HistorySyncNotification\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x01 \x01(\fR\n" +
+	"fileSHA256\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\x02 \x01(\x04R\n" +
+	"fileLength\x12\x1a\n" +
+	"\bmediaKey\x18\x03 \x01(\fR\bmediaKey\x12$\n" +
+	"\rfileEncSHA256\x18\x04 \x01(\fR\rfileEncSHA256\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\x05 \x01(\tR\n" +
+	"directPath\x12\x1a\n" +
+	"\bsyncType\x18\x06 \x01(\x05R\bsyncType\x12\x1e\n" +
+	"\n" +
+	"chunkOrder\x18\a \x01(\rR\n" +
+	"chunkOrder\x12,\n" +
+	"\x11originalMessageID\x18\b \x01(\tR\x11originalMessageID\x12\x1a\n" +
+	"\bprogress\x18\t \x01(\rR\bprogress\x12B\n" +
+	"\x1coldestMsgInChunkTimestampSec\x18\n" +
+	" \x01(\x03R\x1coldestMsgInChunkTimestampSec\x12L\n" +
+	"!initialHistBootstrapInlinePayload\x18\v \x01(\fR!initialHistBootstrapInlinePayload\x12:\n" +
+	"\x18peerDataRequestSessionID\x18\f \x01(\tR\x18peerDataRequestSessionID\x12\x1c\n" +
+	"\tencHandle\x18\x0e \x01(\tR\tencHandle\"\xd0\x03\n" +
 	"\fImageMessage\x12\x10\n" +
 	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1a\n" +
 	"\bmimetype\x18\x02 \x01(\tR\bmimetype\x12\x18\n" +
@@ -1803,7 +2686,17 @@ const file_wae2e_wae2e_proto_rawDesc = "" +
 	"\x0fReactionMessage\x12'\n" +
 	"\x03key\x18\x01 \x01(\v2\x15.wax.wae2e.MessageKeyR\x03key\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12,\n" +
-	"\x11senderTimestampMS\x18\x04 \x01(\x03R\x11senderTimestampMSB.Z,github.com/mdenesfe/wax/internal/proto/wae2e"
+	"\x11senderTimestampMS\x18\x04 \x01(\x03R\x11senderTimestampMS*\xba\x02\n" +
+	"\x1cPeerDataOperationRequestType\x12\x12\n" +
+	"\x0eUPLOAD_STICKER\x10\x00\x12!\n" +
+	"\x1dSEND_RECENT_STICKER_BOOTSTRAP\x10\x01\x12\x19\n" +
+	"\x15GENERATE_LINK_PREVIEW\x10\x02\x12\x1a\n" +
+	"\x16HISTORY_SYNC_ON_DEMAND\x10\x03\x12\x1e\n" +
+	"\x1aPLACEHOLDER_MESSAGE_RESEND\x10\x04\x12\x1e\n" +
+	"\x1aWAFFLE_LINKING_NONCE_FETCH\x10\x05\x12\x1f\n" +
+	"\x1bFULL_HISTORY_SYNC_ON_DEMAND\x10\x06\x12\x1e\n" +
+	"\x1aCOMPANION_META_NONCE_FETCH\x10\a\x12+\n" +
+	"'COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY\x10\bB.Z,github.com/mdenesfe/wax/internal/proto/wae2e"
 
 var (
 	file_wae2e_wae2e_proto_rawDescOnce sync.Once
@@ -1817,62 +2710,90 @@ func file_wae2e_wae2e_proto_rawDescGZIP() []byte {
 	return file_wae2e_wae2e_proto_rawDescData
 }
 
-var file_wae2e_wae2e_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wae2e_wae2e_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_wae2e_wae2e_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_wae2e_wae2e_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_wae2e_wae2e_proto_goTypes = []any{
-	(ProtocolMessage_Type)(0),            // 0: wax.wae2e.ProtocolMessage.Type
-	(*MessageKey)(nil),                   // 1: wax.wae2e.MessageKey
-	(*Message)(nil),                      // 2: wax.wae2e.Message
-	(*FutureProofMessage)(nil),           // 3: wax.wae2e.FutureProofMessage
-	(*SenderKeyDistributionMessage)(nil), // 4: wax.wae2e.SenderKeyDistributionMessage
-	(*ContextInfo)(nil),                  // 5: wax.wae2e.ContextInfo
-	(*ExtendedTextMessage)(nil),          // 6: wax.wae2e.ExtendedTextMessage
-	(*DeviceSentMessage)(nil),            // 7: wax.wae2e.DeviceSentMessage
-	(*MessageContextInfo)(nil),           // 8: wax.wae2e.MessageContextInfo
-	(*ProtocolMessage)(nil),              // 9: wax.wae2e.ProtocolMessage
-	(*ImageMessage)(nil),                 // 10: wax.wae2e.ImageMessage
-	(*VideoMessage)(nil),                 // 11: wax.wae2e.VideoMessage
-	(*AudioMessage)(nil),                 // 12: wax.wae2e.AudioMessage
-	(*DocumentMessage)(nil),              // 13: wax.wae2e.DocumentMessage
-	(*StickerMessage)(nil),               // 14: wax.wae2e.StickerMessage
-	(*ReactionMessage)(nil),              // 15: wax.wae2e.ReactionMessage
+	(PeerDataOperationRequestType)(0),               // 0: wax.wae2e.PeerDataOperationRequestType
+	(ProtocolMessage_Type)(0),                       // 1: wax.wae2e.ProtocolMessage.Type
+	(*MessageKey)(nil),                              // 2: wax.wae2e.MessageKey
+	(*Message)(nil),                                 // 3: wax.wae2e.Message
+	(*FutureProofMessage)(nil),                      // 4: wax.wae2e.FutureProofMessage
+	(*SenderKeyDistributionMessage)(nil),            // 5: wax.wae2e.SenderKeyDistributionMessage
+	(*ContextInfo)(nil),                             // 6: wax.wae2e.ContextInfo
+	(*ExtendedTextMessage)(nil),                     // 7: wax.wae2e.ExtendedTextMessage
+	(*DeviceSentMessage)(nil),                       // 8: wax.wae2e.DeviceSentMessage
+	(*MessageContextInfo)(nil),                      // 9: wax.wae2e.MessageContextInfo
+	(*ProtocolMessage)(nil),                         // 10: wax.wae2e.ProtocolMessage
+	(*PeerDataOperationRequestMessage)(nil),         // 11: wax.wae2e.PeerDataOperationRequestMessage
+	(*PeerDataOperationRequestResponseMessage)(nil), // 12: wax.wae2e.PeerDataOperationRequestResponseMessage
+	(*AppStateSyncKeyShare)(nil),                    // 13: wax.wae2e.AppStateSyncKeyShare
+	(*AppStateSyncKey)(nil),                         // 14: wax.wae2e.AppStateSyncKey
+	(*AppStateSyncKeyId)(nil),                       // 15: wax.wae2e.AppStateSyncKeyId
+	(*AppStateSyncKeyData)(nil),                     // 16: wax.wae2e.AppStateSyncKeyData
+	(*AppStateSyncKeyFingerprint)(nil),              // 17: wax.wae2e.AppStateSyncKeyFingerprint
+	(*AppStateSyncKeyRequest)(nil),                  // 18: wax.wae2e.AppStateSyncKeyRequest
+	(*HistorySyncNotification)(nil),                 // 19: wax.wae2e.HistorySyncNotification
+	(*ImageMessage)(nil),                            // 20: wax.wae2e.ImageMessage
+	(*VideoMessage)(nil),                            // 21: wax.wae2e.VideoMessage
+	(*AudioMessage)(nil),                            // 22: wax.wae2e.AudioMessage
+	(*DocumentMessage)(nil),                         // 23: wax.wae2e.DocumentMessage
+	(*StickerMessage)(nil),                          // 24: wax.wae2e.StickerMessage
+	(*ReactionMessage)(nil),                         // 25: wax.wae2e.ReactionMessage
+	(*PeerDataOperationRequestMessage_SyncDCollectionFatalRecoveryRequest)(nil),                                // 26: wax.wae2e.PeerDataOperationRequestMessage.SyncDCollectionFatalRecoveryRequest
+	(*PeerDataOperationRequestResponseMessage_PeerDataOperationResult)(nil),                                    // 27: wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult
+	(*PeerDataOperationRequestResponseMessage_PeerDataOperationResult_SyncDSnapshotFatalRecoveryResponse)(nil), // 28: wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult.SyncDSnapshotFatalRecoveryResponse
 }
 var file_wae2e_wae2e_proto_depIdxs = []int32{
-	4,  // 0: wax.wae2e.Message.senderKeyDistributionMessage:type_name -> wax.wae2e.SenderKeyDistributionMessage
-	10, // 1: wax.wae2e.Message.imageMessage:type_name -> wax.wae2e.ImageMessage
-	6,  // 2: wax.wae2e.Message.extendedTextMessage:type_name -> wax.wae2e.ExtendedTextMessage
-	13, // 3: wax.wae2e.Message.documentMessage:type_name -> wax.wae2e.DocumentMessage
-	12, // 4: wax.wae2e.Message.audioMessage:type_name -> wax.wae2e.AudioMessage
-	11, // 5: wax.wae2e.Message.videoMessage:type_name -> wax.wae2e.VideoMessage
-	9,  // 6: wax.wae2e.Message.protocolMessage:type_name -> wax.wae2e.ProtocolMessage
-	14, // 7: wax.wae2e.Message.stickerMessage:type_name -> wax.wae2e.StickerMessage
-	7,  // 8: wax.wae2e.Message.deviceSentMessage:type_name -> wax.wae2e.DeviceSentMessage
-	8,  // 9: wax.wae2e.Message.messageContextInfo:type_name -> wax.wae2e.MessageContextInfo
-	3,  // 10: wax.wae2e.Message.viewOnceMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 11: wax.wae2e.Message.ephemeralMessage:type_name -> wax.wae2e.FutureProofMessage
-	15, // 12: wax.wae2e.Message.reactionMessage:type_name -> wax.wae2e.ReactionMessage
-	3,  // 13: wax.wae2e.Message.documentWithCaptionMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 14: wax.wae2e.Message.viewOnceMessageV2:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 15: wax.wae2e.Message.editedMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 16: wax.wae2e.Message.viewOnceMessageV2Extension:type_name -> wax.wae2e.FutureProofMessage
-	2,  // 17: wax.wae2e.FutureProofMessage.message:type_name -> wax.wae2e.Message
-	2,  // 18: wax.wae2e.ContextInfo.quotedMessage:type_name -> wax.wae2e.Message
-	5,  // 19: wax.wae2e.ExtendedTextMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	2,  // 20: wax.wae2e.DeviceSentMessage.message:type_name -> wax.wae2e.Message
-	1,  // 21: wax.wae2e.ProtocolMessage.key:type_name -> wax.wae2e.MessageKey
-	0,  // 22: wax.wae2e.ProtocolMessage.type:type_name -> wax.wae2e.ProtocolMessage.Type
-	2,  // 23: wax.wae2e.ProtocolMessage.editedMessage:type_name -> wax.wae2e.Message
-	5,  // 24: wax.wae2e.ImageMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	5,  // 25: wax.wae2e.VideoMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	5,  // 26: wax.wae2e.AudioMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	5,  // 27: wax.wae2e.DocumentMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	5,  // 28: wax.wae2e.StickerMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	1,  // 29: wax.wae2e.ReactionMessage.key:type_name -> wax.wae2e.MessageKey
-	30, // [30:30] is the sub-list for method output_type
-	30, // [30:30] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	5,  // 0: wax.wae2e.Message.senderKeyDistributionMessage:type_name -> wax.wae2e.SenderKeyDistributionMessage
+	20, // 1: wax.wae2e.Message.imageMessage:type_name -> wax.wae2e.ImageMessage
+	7,  // 2: wax.wae2e.Message.extendedTextMessage:type_name -> wax.wae2e.ExtendedTextMessage
+	23, // 3: wax.wae2e.Message.documentMessage:type_name -> wax.wae2e.DocumentMessage
+	22, // 4: wax.wae2e.Message.audioMessage:type_name -> wax.wae2e.AudioMessage
+	21, // 5: wax.wae2e.Message.videoMessage:type_name -> wax.wae2e.VideoMessage
+	10, // 6: wax.wae2e.Message.protocolMessage:type_name -> wax.wae2e.ProtocolMessage
+	24, // 7: wax.wae2e.Message.stickerMessage:type_name -> wax.wae2e.StickerMessage
+	8,  // 8: wax.wae2e.Message.deviceSentMessage:type_name -> wax.wae2e.DeviceSentMessage
+	9,  // 9: wax.wae2e.Message.messageContextInfo:type_name -> wax.wae2e.MessageContextInfo
+	4,  // 10: wax.wae2e.Message.viewOnceMessage:type_name -> wax.wae2e.FutureProofMessage
+	4,  // 11: wax.wae2e.Message.ephemeralMessage:type_name -> wax.wae2e.FutureProofMessage
+	25, // 12: wax.wae2e.Message.reactionMessage:type_name -> wax.wae2e.ReactionMessage
+	4,  // 13: wax.wae2e.Message.documentWithCaptionMessage:type_name -> wax.wae2e.FutureProofMessage
+	4,  // 14: wax.wae2e.Message.viewOnceMessageV2:type_name -> wax.wae2e.FutureProofMessage
+	4,  // 15: wax.wae2e.Message.editedMessage:type_name -> wax.wae2e.FutureProofMessage
+	4,  // 16: wax.wae2e.Message.viewOnceMessageV2Extension:type_name -> wax.wae2e.FutureProofMessage
+	3,  // 17: wax.wae2e.FutureProofMessage.message:type_name -> wax.wae2e.Message
+	3,  // 18: wax.wae2e.ContextInfo.quotedMessage:type_name -> wax.wae2e.Message
+	6,  // 19: wax.wae2e.ExtendedTextMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	3,  // 20: wax.wae2e.DeviceSentMessage.message:type_name -> wax.wae2e.Message
+	2,  // 21: wax.wae2e.ProtocolMessage.key:type_name -> wax.wae2e.MessageKey
+	1,  // 22: wax.wae2e.ProtocolMessage.type:type_name -> wax.wae2e.ProtocolMessage.Type
+	19, // 23: wax.wae2e.ProtocolMessage.historySyncNotification:type_name -> wax.wae2e.HistorySyncNotification
+	13, // 24: wax.wae2e.ProtocolMessage.appStateSyncKeyShare:type_name -> wax.wae2e.AppStateSyncKeyShare
+	18, // 25: wax.wae2e.ProtocolMessage.appStateSyncKeyRequest:type_name -> wax.wae2e.AppStateSyncKeyRequest
+	3,  // 26: wax.wae2e.ProtocolMessage.editedMessage:type_name -> wax.wae2e.Message
+	11, // 27: wax.wae2e.ProtocolMessage.peerDataOperationRequestMessage:type_name -> wax.wae2e.PeerDataOperationRequestMessage
+	12, // 28: wax.wae2e.ProtocolMessage.peerDataOperationRequestResponseMessage:type_name -> wax.wae2e.PeerDataOperationRequestResponseMessage
+	0,  // 29: wax.wae2e.PeerDataOperationRequestMessage.peerDataOperationRequestType:type_name -> wax.wae2e.PeerDataOperationRequestType
+	26, // 30: wax.wae2e.PeerDataOperationRequestMessage.syncdCollectionFatalRecoveryRequest:type_name -> wax.wae2e.PeerDataOperationRequestMessage.SyncDCollectionFatalRecoveryRequest
+	0,  // 31: wax.wae2e.PeerDataOperationRequestResponseMessage.peerDataOperationRequestType:type_name -> wax.wae2e.PeerDataOperationRequestType
+	27, // 32: wax.wae2e.PeerDataOperationRequestResponseMessage.peerDataOperationResult:type_name -> wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult
+	14, // 33: wax.wae2e.AppStateSyncKeyShare.keys:type_name -> wax.wae2e.AppStateSyncKey
+	15, // 34: wax.wae2e.AppStateSyncKey.keyID:type_name -> wax.wae2e.AppStateSyncKeyId
+	16, // 35: wax.wae2e.AppStateSyncKey.keyData:type_name -> wax.wae2e.AppStateSyncKeyData
+	17, // 36: wax.wae2e.AppStateSyncKeyData.fingerprint:type_name -> wax.wae2e.AppStateSyncKeyFingerprint
+	15, // 37: wax.wae2e.AppStateSyncKeyRequest.keyIDs:type_name -> wax.wae2e.AppStateSyncKeyId
+	6,  // 38: wax.wae2e.ImageMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	6,  // 39: wax.wae2e.VideoMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	6,  // 40: wax.wae2e.AudioMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	6,  // 41: wax.wae2e.DocumentMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	6,  // 42: wax.wae2e.StickerMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	2,  // 43: wax.wae2e.ReactionMessage.key:type_name -> wax.wae2e.MessageKey
+	28, // 44: wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult.syncdSnapshotFatalRecoveryResponse:type_name -> wax.wae2e.PeerDataOperationRequestResponseMessage.PeerDataOperationResult.SyncDSnapshotFatalRecoveryResponse
+	45, // [45:45] is the sub-list for method output_type
+	45, // [45:45] is the sub-list for method input_type
+	45, // [45:45] is the sub-list for extension type_name
+	45, // [45:45] is the sub-list for extension extendee
+	0,  // [0:45] is the sub-list for field type_name
 }
 
 func init() { file_wae2e_wae2e_proto_init() }
@@ -1885,8 +2806,8 @@ func file_wae2e_wae2e_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wae2e_wae2e_proto_rawDesc), len(file_wae2e_wae2e_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   15,
+			NumEnums:      2,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

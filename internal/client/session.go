@@ -97,6 +97,9 @@ func (c *Client) runSession(ctx context.Context, dev *store.Device) sessionResul
 		queue:   make(chan *binary.Node, handlerQueueSize),
 	}
 	s.log.Info("connected", "jid", binary.MaskJID(dev.JID))
+	if dev.PushName != "" {
+		c.pushName.Store(dev.PushName)
+	}
 	c.mu.Lock()
 	c.current = s
 	c.mu.Unlock()

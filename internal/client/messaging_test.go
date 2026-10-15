@@ -334,7 +334,7 @@ func TestUnsupportedStanzasAreDeferredAndAcked(t *testing.T) {
 	if cls, _ := ack.AttrString("class"); cls != "message" {
 		t.Fatalf("ack %s", ack.String())
 	}
-	must(t, c.Send(h.ctx, wabin.Node{Tag: "notification", Attrs: wabin.Attrs{"from": wabin.ServerJID, "id": "N-1", "type": "account_sync", "t": "1700000000"}}))
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "notification", Attrs: wabin.Attrs{"from": wabin.ServerJID, "id": "N-1", "type": "some_future_type", "t": "1700000000"}}))
 	readNodeWith(t, h, c, "ack", "N-1")
 	n, err := h.store.CountDeferred(h.ctx, h.inst)
 	must(t, err)

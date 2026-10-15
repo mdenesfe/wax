@@ -19,7 +19,11 @@ func (c *Client) SendPresence(ctx context.Context, available bool) error {
 	if err != nil {
 		return err
 	}
-	if c.cfg.PushName == "" {
+	name := c.cfg.PushName
+	if name == "" {
+		name, _ = c.pushName.Load().(string) // learned from app state sync
+	}
+	if name == "" {
 		return ErrNoPushName
 	}
 	typ := "unavailable"
@@ -27,7 +31,7 @@ func (c *Client) SendPresence(ctx context.Context, available bool) error {
 		typ = "available"
 	}
 	c.available.Store(available)
-	return s.conn.SendNode(ctx, wabin.Node{Tag: "presence", Attrs: wabin.Attrs{"type": typ, "name": c.cfg.PushName}})
+	return s.conn.SendNode(ctx, wabin.Node{Tag: "presence", Attrs: wabin.Attrs{"type": typ, "name": name}})
 }
 
 // SubscribePresence asks the server for a contact's presence updates.

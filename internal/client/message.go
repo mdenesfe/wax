@@ -203,7 +203,12 @@ func (s *session) handleMessage(n *wabin.Node) {
 		}
 		if hasContent(&msg) {
 			retries, _ := enc.AttrInt("count")
-			s.dispatchMessage(info, &msg, int(retries))
+			if err := s.dispatchMessage(info, &msg, int(retries)); err != nil {
+				// Leave it unacknowledged: the server redelivers it and the
+				// buffered plaintext is reused.
+				s.log.Warn("message handling failed; leaving it for redelivery", "id", info.ID, "error", err)
+				return
+			}
 		}
 		s.markHandled(hash)
 	}
@@ -406,7 +411,7 @@ func (s *session) markHandled(hash []byte) {
 }
 
 // dispatchMessage unwraps container messages and emits the event.
-func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries int) {
+func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries int) error {
 	evt := Message{Info: *info, Raw: msg, Message: msg, RetryCount: retries}
 	if dsm := msg.GetDeviceSentMessage(); dsm != nil && dsm.GetMessage() != nil {
 		// Sent by our own phone: the real content is wrapped.
@@ -416,7 +421,37 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 		}
 	}
 	evt.Message = unwrapMessage(evt.Message)
+
+	// Protocol messages from our own primary device carry sync data. Only
+	// trust them from our own account. They are stored before returning so
+	// the stanza is not acknowledged until they are safe.
+	if pm := evt.Message.GetProtocolMessage(); pm != nil && info.IsFromMe {
+		if share := pm.GetAppStateSyncKeyShare(); share != nil {
+			if err := s.handleKeyShare(share); err != nil {
+				return fmt.Errorf("store app state keys: %w", err)
+			}
+		}
+		if pr := pm.GetPeerDataOperationRequestResponseMessage(); pr != nil {
+			if err := s.handlePeerDataResponse(pr); err != nil {
+				s.log.Warn("could not process peer data response", "error", err)
+			}
+		}
+		if hn := pm.GetHistorySyncNotification(); hn != nil {
+			if err := s.enqueueHistory(hn); err != nil {
+				return fmt.Errorf("queue history sync: %w", err)
+			}
+		}
+	}
+	if pm := evt.Message.GetProtocolMessage(); pm == nil || pm.GetType() == wae2e.ProtocolMessage_REVOKE || pm.GetType() == wae2e.ProtocolMessage_MESSAGE_EDIT {
+		s.c.storeLiveMessage(s.ctx, evt.Info.Chat, info.Sender, info.ID, info.IsFromMe, info.Timestamp, info.PushName, evt.Message)
+	}
+	if info.PushName != "" && !info.IsFromMe {
+		if err := s.c.cfg.Store.PutPushName(s.ctx, s.c.cfg.InstanceID, info.Sender.ToNonAD().String(), info.PushName); err != nil {
+			s.log.Debug("push name not stored", "error", err)
+		}
+	}
 	s.c.emit(evt)
+	return nil
 }
 
 // unwrapMessage strips wrapper containers (ephemeral, view once, ...).

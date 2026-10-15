@@ -124,6 +124,12 @@ func (g *groupServer) answerUntilMessage() *wabin.Node {
 			}}}})))
 		case "encrypt":
 			must(t, c.Send(h.ctx, fakewa.Result(id, wabin.Node{Tag: "list", Content: []wabin.Node{g.bob.bundleNode(), g.myPhone.bundleNode()}})))
+		case "w:sync:app:state":
+			// Initial app state sync after login: nothing to sync here.
+			sn, _ := n.Child("sync")
+			coll, _ := sn.Child("collection")
+			must(t, c.Send(h.ctx, fakewa.Result(id, wabin.Node{Tag: "sync", Content: []wabin.Node{
+				{Tag: "collection", Attrs: wabin.Attrs{"name": coll.Attrs["name"], "version": 0}}}})))
 		default:
 			t.Fatalf("unexpected iq %s", n.String())
 		}

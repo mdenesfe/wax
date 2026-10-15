@@ -93,10 +93,95 @@ message ProtocolMessage {
 		PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE = 17;
 		LID_MIGRATION_MAPPING_SYNC = 22;
 	}
-	optional MessageKey key           = 1;
-	optional Type       type          = 2;
-	optional Message    editedMessage = 14;
-	optional int64      timestampMS   = 15;
+	optional MessageKey              key                     = 1;
+	optional Type                    type                    = 2;
+	optional HistorySyncNotification historySyncNotification = 6;
+	optional AppStateSyncKeyShare    appStateSyncKeyShare    = 7;
+	optional AppStateSyncKeyRequest  appStateSyncKeyRequest  = 8;
+	optional Message                 editedMessage           = 14;
+	optional int64                   timestampMS             = 15;
+	optional PeerDataOperationRequestMessage         peerDataOperationRequestMessage         = 16;
+	optional PeerDataOperationRequestResponseMessage peerDataOperationRequestResponseMessage = 17;
+}
+
+enum PeerDataOperationRequestType {
+	UPLOAD_STICKER = 0;
+	SEND_RECENT_STICKER_BOOTSTRAP = 1;
+	GENERATE_LINK_PREVIEW = 2;
+	HISTORY_SYNC_ON_DEMAND = 3;
+	PLACEHOLDER_MESSAGE_RESEND = 4;
+	WAFFLE_LINKING_NONCE_FETCH = 5;
+	FULL_HISTORY_SYNC_ON_DEMAND = 6;
+	COMPANION_META_NONCE_FETCH = 7;
+	COMPANION_SYNCD_SNAPSHOT_FATAL_RECOVERY = 8;
+}
+
+// Requests to our own primary device.
+message PeerDataOperationRequestMessage {
+	message SyncDCollectionFatalRecoveryRequest {
+		optional string collectionName = 1;
+		optional int64  timestamp      = 2;
+	}
+	optional PeerDataOperationRequestType        peerDataOperationRequestType        = 1;
+	optional SyncDCollectionFatalRecoveryRequest syncdCollectionFatalRecoveryRequest = 7;
+}
+
+message PeerDataOperationRequestResponseMessage {
+	message PeerDataOperationResult {
+		message SyncDSnapshotFatalRecoveryResponse {
+			optional bytes collectionSnapshot = 1; // serialized SyncdSnapshotRecovery
+			optional bool  isCompressed       = 2; // gzip
+		}
+		optional SyncDSnapshotFatalRecoveryResponse syncdSnapshotFatalRecoveryResponse = 8;
+	}
+	optional PeerDataOperationRequestType peerDataOperationRequestType = 1;
+	optional string                       stanzaID                     = 2;
+	repeated PeerDataOperationResult      peerDataOperationResult      = 3;
+}
+
+message AppStateSyncKeyShare {
+	repeated AppStateSyncKey keys = 1;
+}
+
+message AppStateSyncKey {
+	optional AppStateSyncKeyId   keyID   = 1;
+	optional AppStateSyncKeyData keyData = 2;
+}
+
+message AppStateSyncKeyId {
+	optional bytes keyID = 1;
+}
+
+message AppStateSyncKeyData {
+	optional bytes                      keyData     = 1;
+	optional AppStateSyncKeyFingerprint fingerprint = 2;
+	optional int64                      timestamp   = 3;
+}
+
+message AppStateSyncKeyFingerprint {
+	optional uint32 rawID         = 1;
+	optional uint32 currentIndex  = 2;
+	repeated uint32 deviceIndexes = 3 [packed=true];
+}
+
+message AppStateSyncKeyRequest {
+	repeated AppStateSyncKeyId keyIDs = 1;
+}
+
+message HistorySyncNotification {
+	optional bytes  fileSHA256                        = 1;
+	optional uint64 fileLength                        = 2;
+	optional bytes  mediaKey                          = 3;
+	optional bytes  fileEncSHA256                     = 4;
+	optional string directPath                        = 5;
+	optional int32  syncType                          = 6; // HistorySyncType
+	optional uint32 chunkOrder                        = 7;
+	optional string originalMessageID                 = 8;
+	optional uint32 progress                          = 9;
+	optional int64  oldestMsgInChunkTimestampSec      = 10;
+	optional bytes  initialHistBootstrapInlinePayload = 11;
+	optional string peerDataRequestSessionID          = 12;
+	optional string encHandle                         = 14;
 }
 
 // Media messages. Field numbers differ between the types; they are copied

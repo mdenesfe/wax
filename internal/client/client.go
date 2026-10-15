@@ -74,9 +74,12 @@ type Client struct {
 	devCache deviceCache
 	groups   groupCache
 	media    mediaState
+	appState appStateSync
+	history  chan struct{} // kicks the history sync worker
 
-	available   atomic.Bool // we announced presence "available"
-	mediaScheme string      // tests only: "http" for a local media server
+	available   atomic.Bool  // we announced presence "available"
+	pushName    atomic.Value // string; our display name from app state
+	mediaScheme string       // tests only: "http" for a local media server
 	retries     retryCounter
 
 	mu      sync.Mutex
@@ -101,7 +104,7 @@ func New(cfg Config) (*Client, error) {
 	setDefault(&cfg.KeepAliveMax, 30*time.Second)
 	setDefault(&cfg.KeepAliveTimeout, 10*time.Second)
 	setDefault(&cfg.KeepAliveMaxFailure, 90*time.Second)
-	return &Client{cfg: cfg, log: cfg.Log.With("instance", cfg.InstanceID)}, nil
+	return &Client{cfg: cfg, log: cfg.Log.With("instance", cfg.InstanceID), history: make(chan struct{}, 1)}, nil
 }
 
 func setDefault(d *time.Duration, v time.Duration) {

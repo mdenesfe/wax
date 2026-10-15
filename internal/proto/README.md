@@ -12,6 +12,12 @@ One directory per WhatsApp Web protobuf module:
 | `wacert`         | `WACert`              | Noise server certificate chain                   |
 | `wacompanionreg` | `WACompanionReg`      | `DeviceProps`, `ClientPairingProps`               |
 | `waadv`          | `WAAdv`               | Pairing identity attestation (ADV)               |
+| `wae2e`          | `WAWebProtobufsE2E`   | Message content, protocol messages               |
+| `waserversync`   | `WAWebProtobufsServerSync` | App state patches/snapshots                  |
+| `wasyncaction`   | `WAWebProtobufSyncAction` (+ `SyncdSnapshotRecovery`) | App state values   |
+| `wahistorysync`  | `WAWebProtobufsHistorySync` (+ `WebMessageInfo`) | History sync payload    |
+| `signalwire`     | libsignal `WhisperTextProtocol` | Signal wire messages                   |
+| `signalstore`    | (ours)                | Signal session storage format                    |
 
 These are **subsets** of the official schemas. Only fields this project reads
 or writes are declared. Undeclared fields received from the server are kept as

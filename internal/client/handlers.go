@@ -221,6 +221,7 @@ func (s *session) handleSuccess(n *binary.Node) {
 	// Post-login setup does IQ round trips, so it must not block the
 	// handler goroutine (responses are matched by the reader).
 	s.goSafe("post-login", func() {
+		s.goSafe("history-worker", s.historyWorker)
 		if err := s.c.cfg.Store.PurgeOld(s.ctx, s.c.cfg.InstanceID, 30*24*time.Hour, 7*24*time.Hour); err != nil {
 			s.log.Warn("purging old buffers failed", "error", err)
 		}
@@ -237,6 +238,8 @@ func (s *session) handleSuccess(n *binary.Node) {
 		}
 		s.ready.Store(true)
 		s.c.emit(Connected{JID: s.dev.JID})
+		// Bring app state up to date (contacts, chat settings, push name).
+		s.c.syncAllAppState(s.ctx, s)
 	})
 }
 
@@ -274,6 +277,41 @@ func (s *session) handleNotification(n *binary.Node) {
 	switch typ {
 	case "w:gp2":
 		s.handleGroupNotification(n)
+		return
+	case "server_sync":
+		// App state changed on another device: sync the named collections.
+		var names []string
+		for _, coll := range n.ChildrenByTag("collection") {
+			if name, ok := coll.AttrString("name"); ok {
+				names = append(names, name)
+			}
+		}
+		s.ack(n)
+		s.goSafe("appstate-notify", func() {
+			for _, name := range names {
+				if err := s.c.syncAppState(s.ctx, s, name, false); err != nil && !errors.Is(err, errMissingKeys) {
+					s.log.Warn("app state sync failed", "collection", name, "error", err)
+				}
+			}
+		})
+		return
+	case "account_sync":
+		var changes []string
+		for _, ch := range n.Children() {
+			changes = append(changes, ch.Tag)
+			if ch.Tag == "devices" {
+				s.c.devCache.invalidate(s.dev.JID.ToNonAD())
+				s.c.devCache.invalidate(s.dev.LID.ToNonAD())
+			}
+		}
+		s.c.emit(AccountSync{Changes: changes})
+		s.ack(n)
+		return
+	case "disappearing_mode", "mex", "picture", "status", "privacy_token":
+		// Informational for us; acknowledged so they stop occupying the
+		// offline queue. (privacy_token storage is future work.)
+		s.log.Debug("notification acknowledged", "type", typ)
+		s.ack(n)
 		return
 	case "devices":
 		// A user added or removed a device: drop the cached list.

@@ -5,6 +5,7 @@ import (
 
 	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
+	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 )
 
 // Event is emitted to Config.OnEvent. Handlers run synchronously on the
@@ -128,6 +129,47 @@ type CallEvent struct {
 	Timestamp time.Time
 }
 
+// AppStateChange is one change from app state sync (contact, mute, pin,
+// archive, push name, ...). Index[0] names the kind, Index[1] usually the chat.
+type AppStateChange struct {
+	Collection   string
+	Index        []string
+	Action       *wasyncaction.SyncActionValue
+	Removed      bool
+	FromFullSync bool
+}
+
+// AppStateSyncComplete reports a finished full sync of a collection.
+type AppStateSyncComplete struct {
+	Collection string
+	Version    uint64
+}
+
+// AppStateSyncError reports a failed collection sync (it is retried on the
+// next server_sync notification or reconnect).
+type AppStateSyncError struct {
+	Collection string
+	Err        error
+}
+
+// HistorySync reports a processed history sync chunk.
+type HistorySync struct {
+	Type          string
+	Chunk         uint32
+	Progress      uint32
+	Conversations int
+	Messages      int
+	PushNames     int
+}
+
+// AccountSync reports a change to our own account (devices, privacy, ...).
+type AccountSync struct{ Changes []string }
+
+func (AppStateChange) eventName() string       { return "appstate_change" }
+func (AppStateSyncComplete) eventName() string { return "appstate_sync_complete" }
+func (AppStateSyncError) eventName() string    { return "appstate_sync_error" }
+func (HistorySync) eventName() string          { return "history_sync" }
+func (AccountSync) eventName() string          { return "account_sync" }
 func (GroupUpdate) eventName() string          { return "group_update" }
 func (Presence) eventName() string             { return "presence" }
 func (ChatPresence) eventName() string         { return "chat_presence" }
