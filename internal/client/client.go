@@ -61,6 +61,10 @@ type Client struct {
 	log *slog.Logger
 
 	preKeyMu sync.Mutex // serializes prekey uploads
+	sendMu   sync.Mutex // serializes outgoing messages (ordering, device fan-out)
+	locks    addrLocks  // per-Signal-address locks
+	devCache deviceCache
+	retries  retryCounter
 
 	mu      sync.Mutex
 	current *session // nil while disconnected

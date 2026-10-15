@@ -31,11 +31,15 @@ func (s *session) handleNode(n *binary.Node) {
 		s.handleNotification(n)
 	case "ib":
 		s.handleIB(n)
-	case "message", "receipt", "call", "presence", "chatstate":
-		// Deliberately not acknowledged until the phases that implement
-		// them: an unacked stanza stays queued on the server and is
-		// redelivered on the next connection, while an ack would drop it.
-		s.log.Debug("stanza not handled yet (left unacked for redelivery)", "tag", n.Tag)
+	case "message":
+		s.handleMessage(n)
+	case "receipt":
+		s.handleReceipt(n)
+	case "call":
+		s.deferStanza(n, "calls not implemented yet")
+	case "presence", "chatstate":
+		// Ephemeral, not queued by the server, no ack expected.
+		s.log.Debug("ignoring ephemeral stanza", "tag", n.Tag)
 	default:
 		s.log.Debug("ignoring unknown node", "tag", n.Tag)
 	}
@@ -159,7 +163,7 @@ func (s *session) handlePairSuccess(n *binary.Node) {
 		if err := tx.SavePairing(s.ctx, &dev); err != nil {
 			return err
 		}
-		return tx.PutIdentity(s.ctx, dev.InstanceID, primary.String(), res.PrimaryIdentity)
+		return tx.PutIdentity(s.ctx, dev.InstanceID, signalAddress(primary), res.PrimaryIdentity)
 	})
 	if err != nil {
 		s.failPairing(ps.IQID, fmt.Errorf("persist pairing: %w", err))
@@ -195,7 +199,16 @@ func (s *session) handleSuccess(n *binary.Node) {
 	}
 	s.loggedInAt = time.Now()
 	s.log.Info("logged in")
-	if lid, ok := n.AttrJID("lid"); ok && !lid.IsEmpty() && lid != s.dev.LID {
+	if !s.dev.LID.IsEmpty() {
+		s.c.learnLID(s.ctx, s.dev.JID.ToNonAD(), s.dev.LID.ToNonAD())
+	}
+	lid, ok := n.AttrJID("lid")
+	if ok && lid.Device == 0 {
+		// Our device index is the same under both identities; the server
+		// may send the LID without it.
+		lid.Device = s.dev.JID.Device
+	}
+	if ok && !lid.IsEmpty() && lid != s.dev.LID {
 		if err := s.c.cfg.Store.UpdateLID(s.ctx, s.dev.InstanceID, lid); err != nil {
 			s.log.Warn("failed to store LID", "error", err)
 		} else {
@@ -205,6 +218,9 @@ func (s *session) handleSuccess(n *binary.Node) {
 	// Post-login setup does IQ round trips, so it must not block the
 	// handler goroutine (responses are matched by the reader).
 	s.goSafe("post-login", func() {
+		if err := s.c.cfg.Store.PurgeOld(s.ctx, s.c.cfg.InstanceID, 30*24*time.Hour, 7*24*time.Hour); err != nil {
+			s.log.Warn("purging old buffers failed", "error", err)
+		}
 		if err := s.c.ensurePreKeys(s.ctx, s); err != nil {
 			s.log.Warn("prekey maintenance failed; will retry on next connect", "error", err)
 		}
@@ -216,6 +232,7 @@ func (s *session) handleSuccess(n *binary.Node) {
 		}, 0); err != nil {
 			s.log.Warn("failed to set active", "error", err)
 		}
+		s.ready.Store(true)
 		s.c.emit(Connected{JID: s.dev.JID})
 	})
 }
@@ -251,9 +268,45 @@ func (s *session) handleNotification(n *binary.Node) {
 			return
 		}
 	}
-	// Other notifications are handled in later phases; leave them unacked
-	// so the server redelivers them.
-	s.log.Debug("notification not handled yet", "type", typ)
+	switch typ {
+	case "devices":
+		// A user added or removed a device: drop the cached list.
+		s.c.devCache.invalidate(from)
+		s.ack(n)
+		return
+	case "encrypt":
+		if _, ok := n.Child("identity"); ok && from.User != "" {
+			// The user re-registered: their old sessions are useless.
+			if err := s.c.cfg.Store.DeleteUserSessions(s.ctx, s.c.cfg.InstanceID, signalAddressName(from.ToNonAD())); err != nil {
+				s.log.Warn("failed to drop sessions after identity change", "error", err)
+				return // unacked: retried on redelivery
+			}
+			s.c.devCache.invalidate(from)
+			s.c.emit(IdentityChanged{JID: from})
+			s.ack(n)
+			return
+		}
+	}
+	// Other notifications are handled in later phases.
+	s.deferStanza(n, "notification type "+typ+" not implemented yet")
+}
+
+// deferStanza stores a stanza we cannot process yet and acknowledges it only
+// after the write succeeded. Leaving stanzas unacknowledged is not an
+// option: the server delivers its offline queue in windows and stops at
+// unacknowledged stanzas, which would also hold back messages we can handle.
+func (s *session) deferStanza(n *binary.Node, reason string) {
+	id, _ := n.AttrString("id")
+	raw, err := binary.Marshal(*n)
+	if err == nil {
+		err = s.c.cfg.Store.PutDeferred(s.ctx, s.c.cfg.InstanceID, n.Tag, id, reason, raw)
+	}
+	if err != nil {
+		s.log.Warn("could not defer stanza; leaving it unacknowledged", "tag", n.Tag, "id", id, "error", err)
+		return
+	}
+	s.log.Debug("deferred stanza", "tag", n.Tag, "id", id, "reason", reason)
+	s.ack(n)
 }
 
 // ack acknowledges a stanza so the server removes it from our queue.

@@ -3,7 +3,8 @@ package client
 import (
 	"time"
 
-	"github.com/mdenesfe/wax/internal/binary"
+	wabin "github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/proto/wae2e"
 )
 
 // Event is emitted to Config.OnEvent. Handlers run synchronously on the
@@ -25,7 +26,7 @@ type QRTimeout struct{}
 // PairSuccess reports a completed pairing. The client reconnects and logs in
 // on its own right after this event.
 type PairSuccess struct {
-	JID, LID     binary.JID
+	JID, LID     wabin.JID
 	Platform     string
 	BusinessName string
 }
@@ -34,7 +35,7 @@ type PairSuccess struct {
 type PairError struct{ Err error }
 
 // Connected means the client is logged in and ready.
-type Connected struct{ JID binary.JID }
+type Connected struct{ JID wabin.JID }
 
 // Disconnected is emitted whenever a connection ends. RetryIn is the backoff
 // delay before the next attempt (zero for an immediate reconnect).
@@ -63,14 +64,47 @@ type KeepAliveTimeout struct {
 	LastSuccess time.Time
 }
 
-func (QRCode) eventName() string           { return "qr" }
-func (QRTimeout) eventName() string        { return "qr_timeout" }
-func (PairSuccess) eventName() string      { return "pair_success" }
-func (PairError) eventName() string        { return "pair_error" }
-func (Connected) eventName() string        { return "connected" }
-func (Disconnected) eventName() string     { return "disconnected" }
-func (LoggedOut) eventName() string        { return "logged_out" }
-func (StreamReplaced) eventName() string   { return "stream_replaced" }
-func (ClientOutdated) eventName() string   { return "client_outdated" }
-func (TemporaryBan) eventName() string     { return "temporary_ban" }
-func (KeepAliveTimeout) eventName() string { return "keepalive_timeout" }
+// Message is a decrypted incoming message (including messages sent from our
+// other devices, with Info.IsFromMe set).
+type Message struct {
+	Info       MessageInfo
+	Message    *wae2e.Message // content with wrappers (device sent, ephemeral, ...) removed
+	Raw        *wae2e.Message // as decrypted
+	RetryCount int
+}
+
+// UndecryptableMessage reports a message we could not decrypt. A retry
+// receipt was sent; the sender's device will usually resend it.
+type UndecryptableMessage struct {
+	Info MessageInfo
+	Err  error
+}
+
+// Receipt reports delivery/read/played/retry receipts for our messages.
+type Receipt struct {
+	IDs       []string
+	Chat      wabin.JID
+	Sender    wabin.JID
+	Type      string // "" (delivered), "read", "played", "sender", "retry", ...
+	Timestamp time.Time
+}
+
+// IdentityChanged reports that a contact's identity key changed (reinstall
+// or new phone). Their sessions were reset.
+type IdentityChanged struct{ JID wabin.JID }
+
+func (Message) eventName() string              { return "message" }
+func (UndecryptableMessage) eventName() string { return "undecryptable_message" }
+func (Receipt) eventName() string              { return "receipt" }
+func (IdentityChanged) eventName() string      { return "identity_changed" }
+func (QRCode) eventName() string               { return "qr" }
+func (QRTimeout) eventName() string            { return "qr_timeout" }
+func (PairSuccess) eventName() string          { return "pair_success" }
+func (PairError) eventName() string            { return "pair_error" }
+func (Connected) eventName() string            { return "connected" }
+func (Disconnected) eventName() string         { return "disconnected" }
+func (LoggedOut) eventName() string            { return "logged_out" }
+func (StreamReplaced) eventName() string       { return "stream_replaced" }
+func (ClientOutdated) eventName() string       { return "client_outdated" }
+func (TemporaryBan) eventName() string         { return "temporary_ban" }
+func (KeepAliveTimeout) eventName() string     { return "keepalive_timeout" }

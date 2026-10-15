@@ -1,0 +1,35 @@
+// Signal protocol wire messages ("WhisperTextProtocol"), version 3, as used
+// by WhatsApp inside <enc type="msg|pkmsg|skmsg"> nodes. Field numbers match
+// libsignal and MUST NOT change.
+syntax = "proto2";
+package wax.signalwire;
+option go_package = "github.com/mdenesfe/wax/internal/proto/signalwire";
+
+message SignalMessage {
+	optional bytes  ratchetKey      = 1; // 0x05 || 32-byte key
+	optional uint32 counter         = 2;
+	optional uint32 previousCounter = 3;
+	optional bytes  ciphertext      = 4;
+}
+
+message PreKeySignalMessage {
+	optional uint32 registrationId = 5;
+	optional uint32 preKeyId       = 1;
+	optional uint32 signedPreKeyId = 6;
+	optional bytes  baseKey        = 2;
+	optional bytes  identityKey    = 3;
+	optional bytes  message        = 4; // serialized SignalMessage (with version byte and MAC)
+}
+
+message SenderKeyMessage {
+	optional uint32 id         = 1;
+	optional uint32 iteration  = 2;
+	optional bytes  ciphertext = 3;
+}
+
+message SenderKeyDistributionMessage {
+	optional uint32 id         = 1;
+	optional uint32 iteration  = 2;
+	optional bytes  chainKey   = 3;
+	optional bytes  signingKey = 4;
+}

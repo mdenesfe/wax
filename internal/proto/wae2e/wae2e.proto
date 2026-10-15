@@ -1,0 +1,94 @@
+// End-to-end encrypted message content (WhatsApp Web module
+// "WAWebProtobufsE2E"), subset. Field numbers MUST match WhatsApp Web.
+// Unknown fields are preserved by protobuf-go when decoding and re-encoding.
+syntax = "proto2";
+package wax.wae2e;
+option go_package = "github.com/mdenesfe/wax/internal/proto/wae2e";
+
+message MessageKey { // WACommon.MessageKey
+	optional string remoteJID   = 1;
+	optional bool   fromMe      = 2;
+	optional string ID          = 3;
+	optional string participant = 4;
+}
+
+message Message {
+	optional string                       conversation                 = 1;
+	optional SenderKeyDistributionMessage senderKeyDistributionMessage = 2;
+	optional ExtendedTextMessage          extendedTextMessage          = 6;
+	optional ProtocolMessage              protocolMessage              = 12;
+	optional DeviceSentMessage            deviceSentMessage            = 31;
+	optional MessageContextInfo           messageContextInfo           = 35;
+	optional FutureProofMessage           viewOnceMessage              = 37;
+	optional FutureProofMessage           ephemeralMessage             = 40;
+	optional FutureProofMessage           documentWithCaptionMessage   = 53;
+	optional FutureProofMessage           viewOnceMessageV2            = 55;
+	optional FutureProofMessage           editedMessage                = 58;
+	optional FutureProofMessage           viewOnceMessageV2Extension   = 59;
+}
+
+message FutureProofMessage {
+	optional Message message = 1;
+}
+
+message SenderKeyDistributionMessage {
+	optional string groupID                             = 1;
+	optional bytes  axolotlSenderKeyDistributionMessage = 2;
+}
+
+message ContextInfo {
+	optional string  stanzaID      = 1;
+	optional string  participant   = 2;
+	optional Message quotedMessage = 3;
+	optional string  remoteJID     = 4;
+	repeated string  mentionedJID  = 15;
+	optional uint32  forwardingScore = 21;
+	optional bool    isForwarded   = 22;
+}
+
+message ExtendedTextMessage {
+	optional string      text        = 1;
+	optional string      matchedText = 2;
+	optional string      description = 5;
+	optional string      title       = 6;
+	optional ContextInfo contextInfo = 17;
+}
+
+message DeviceSentMessage {
+	optional string  destinationJID = 1;
+	optional Message message        = 2;
+	optional string  phash          = 3;
+}
+
+message MessageContextInfo {
+	optional bytes messageSecret = 3;
+	optional bytes paddingBytes  = 4;
+}
+
+message ProtocolMessage {
+	enum Type {
+		// Listed first so GetType() returns it when the field is absent or holds
+		// a value this schema does not know (proto2 enums default to the first
+		// value). Without it an unknown type would read as REVOKE. Not a
+		// WhatsApp value; never sent.
+		TYPE_UNKNOWN = -1;
+		REVOKE = 0;
+		EPHEMERAL_SETTING = 3;
+		EPHEMERAL_SYNC_RESPONSE = 4;
+		HISTORY_SYNC_NOTIFICATION = 5;
+		APP_STATE_SYNC_KEY_SHARE = 6;
+		APP_STATE_SYNC_KEY_REQUEST = 7;
+		MSG_FANOUT_BACKFILL_REQUEST = 8;
+		INITIAL_SECURITY_NOTIFICATION_SETTING_SYNC = 9;
+		APP_STATE_FATAL_EXCEPTION_NOTIFICATION = 10;
+		SHARE_PHONE_NUMBER = 11;
+		MESSAGE_EDIT = 14;
+		PEER_DATA_OPERATION_REQUEST_MESSAGE = 16;
+		PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE = 17;
+		LID_MIGRATION_MAPPING_SYNC = 22;
+	}
+	optional MessageKey key           = 1;
+	optional Type       type          = 2;
+	optional Message    editedMessage = 14;
+	optional int64      timestampMS   = 15;
+}

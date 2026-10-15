@@ -187,21 +187,30 @@ func (h *harness) pair() (*fakewa.Phone, *fakewa.Conn) {
 
 // serveLogin answers the post-login IQs and returns the uploaded prekey list.
 func (h *harness) serveLogin(c *fakewa.Conn, serverCount int) []binary.Node {
+	up := h.serveLoginUpload(c, serverCount)
+	if up == nil {
+		return nil
+	}
+	list, _ := up.Child("list")
+	return list.Children()
+}
+
+// serveLoginUpload is serveLogin returning the whole prekey upload IQ.
+func (h *harness) serveLoginUpload(c *fakewa.Conn, serverCount int) *binary.Node {
 	t, ctx := h.t, h.ctx
 	must(t, c.Send(ctx, binary.Node{Tag: "success", Attrs: binary.Attrs{"t": "1700000000", "lid": binary.JID{User: "1" + testUser, Server: binary.ServerLID}}}))
 	q, err := c.ReadIQ(ctx, "encrypt")
 	must(t, err)
 	id, _ := q.AttrString("id")
 	must(t, c.Send(ctx, fakewa.Result(id, binary.Node{Tag: "count", Attrs: binary.Attrs{"value": serverCount}})))
-	var uploaded []binary.Node
+	var uploaded *binary.Node
 	next, err := c.ReadUntil(ctx, func(n *binary.Node) bool {
 		ns, _ := n.AttrString("xmlns")
 		return n.Tag == "iq" && (ns == "encrypt" || ns == "passive")
 	})
 	must(t, err)
 	if ns, _ := next.AttrString("xmlns"); ns == "encrypt" {
-		list, _ := next.Child("list")
-		uploaded = list.Children()
+		uploaded = next
 		skey, ok := next.Child("skey")
 		if !ok {
 			t.Fatal("upload without signed prekey")

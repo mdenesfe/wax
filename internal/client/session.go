@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdenesfe/wax/internal/binary"
@@ -64,8 +65,9 @@ type session struct {
 	endOnce sync.Once
 	result  sessionResult
 
-	loggedInAt time.Time // set by the handler goroutine on <success>
-	pairing    *qrState  // non-nil while showing QR codes
+	loggedInAt time.Time   // set by the handler goroutine on <success>
+	pairing    *qrState    // non-nil while showing QR codes
+	ready      atomic.Bool // logged in and post-login setup done
 }
 
 // runSession connects once and serves the connection until it ends.
@@ -202,7 +204,8 @@ func (s *session) sendNode(n binary.Node) error {
 	return s.conn.SendNode(s.ctx, n)
 }
 
-// sendIQ sends an IQ and waits for the response with the same id.
+// sendIQ sends an IQ and waits for the response with the same id. An
+// <iq type="error"> response is returned as *IQError.
 func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Duration) (*binary.Node, error) {
 	if n.Attrs == nil {
 		n.Attrs = binary.Attrs{}
@@ -212,6 +215,23 @@ func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Durati
 		id = s.conn.NextID()
 		n.Attrs["id"] = id
 	}
+	resp, err := s.sendAndWait(ctx, n, id, timeout)
+	if err != nil {
+		return nil, err
+	}
+	if typ, _ := resp.AttrString("type"); typ == "error" {
+		e := &IQError{Node: resp}
+		if en, ok := resp.Child("error"); ok {
+			e.Code, _ = en.AttrString("code")
+			e.Text, _ = en.AttrString("text")
+		}
+		return resp, e
+	}
+	return resp, nil
+}
+
+// sendAndWait sends n and waits for the iq result/error or ack carrying id.
+func (s *session) sendAndWait(ctx context.Context, n binary.Node, id string, timeout time.Duration) (*binary.Node, error) {
 	if timeout <= 0 {
 		timeout = defaultIQTimeout
 	}
@@ -241,14 +261,6 @@ func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Durati
 		if !ok {
 			return nil, ErrNotConnected
 		}
-		if typ, _ := resp.AttrString("type"); typ == "error" {
-			e := &IQError{Node: resp}
-			if en, ok := resp.Child("error"); ok {
-				e.Code, _ = en.AttrString("code")
-				e.Text, _ = en.AttrString("text")
-			}
-			return resp, e
-		}
 		return resp, nil
 	case <-t.C:
 		return nil, fmt.Errorf("%w: %s", ErrIQTimeout, id)
@@ -259,13 +271,15 @@ func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Durati
 	}
 }
 
-// deliverResponse hands iq results/errors to the waiting sendIQ.
+// deliverResponse hands iq results/errors and acks to the waiting sender.
 func (s *session) deliverResponse(n *binary.Node) bool {
-	if n.Tag != "iq" {
-		return false
-	}
-	typ, _ := n.AttrString("type")
-	if typ != "result" && typ != "error" {
+	switch n.Tag {
+	case "iq":
+		if typ, _ := n.AttrString("type"); typ != "result" && typ != "error" {
+			return false
+		}
+	case "ack":
+	default:
 		return false
 	}
 	id, _ := n.AttrString("id")
