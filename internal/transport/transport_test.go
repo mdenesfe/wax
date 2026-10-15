@@ -171,7 +171,7 @@ func runServer(ctx context.Context, fc FrameConn, pki *testPKI, certChain []byte
 	return serverResult{clientStatic: res.ClientStatic, payload: res.Payload, conn: res.Conn}
 }
 
-func doHandshake(t *testing.T, pki *testPKI, chain []byte) (*NoiseConn, serverResult, error, *keys.KeyPair) {
+func doHandshake(t *testing.T, pki *testPKI, chain []byte) (*NoiseConn, serverResult, *keys.KeyPair, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
@@ -188,12 +188,12 @@ func doHandshake(t *testing.T, pki *testPKI, chain []byte) (*NoiseConn, serverRe
 	if err != nil {
 		client.Close() // unblock the server
 	}
-	return conn, <-resCh, err, noiseKey
+	return conn, <-resCh, noiseKey, err
 }
 
 func TestHandshakeAndTraffic(t *testing.T) {
 	pki := newTestPKI(t)
-	conn, srv, err, noiseKey := doHandshake(t, pki, pki.chain(t))
+	conn, srv, noiseKey, err := doHandshake(t, pki, pki.chain(t))
 	if err != nil {
 		t.Fatalf("client: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestHandshakeAndTraffic(t *testing.T) {
 
 func TestTamperedFrameIsFatal(t *testing.T) {
 	pki := newTestPKI(t)
-	conn, srv, err, _ := doHandshake(t, pki, pki.chain(t))
+	conn, srv, _, err := doHandshake(t, pki, pki.chain(t))
 	if err != nil || srv.err != nil {
 		t.Fatal(err, srv.err)
 	}
@@ -278,7 +278,7 @@ func TestCertificateFailures(t *testing.T) {
 	t.Run("handshake aborts", func(t *testing.T) {
 		pki := newTestPKI(t)
 		pki.notAfter = time.Now().Add(-time.Minute)
-		_, _, err, _ := doHandshake(t, pki, pki.chain(t))
+		_, _, _, err := doHandshake(t, pki, pki.chain(t))
 		var he *HandshakeError
 		if !errors.As(err, &he) || he.Step != "verify certificate" || !errors.Is(err, ErrHandshake) {
 			t.Fatalf("unexpected error %v", err)

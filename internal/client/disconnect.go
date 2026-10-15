@@ -3,7 +3,7 @@ package client
 import (
 	"fmt"
 
-	"github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // DisconnectAction tells the connection manager what to do after the server
@@ -60,7 +60,7 @@ type DisconnectInfo struct {
 // because the stream errors seen in practice are transient. Unknown codes on
 // <failure>, which is sent instead of <success> at login, default to fatal so
 // we don't hammer the server with a login it keeps refusing.
-func ClassifyDisconnect(n *binary.Node) DisconnectInfo {
+func ClassifyDisconnect(n *wabin.Node) DisconnectInfo {
 	switch n.Tag {
 	case "stream:error":
 		code, _ := n.AttrString("code")

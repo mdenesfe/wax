@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/signal"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // deviceCacheTTL bounds how long a device list is trusted without a
@@ -177,7 +177,7 @@ func (c *Client) resolveLID(ctx context.Context, s *session, pn wabin.JID) (wabi
 		}
 		return lid.ToNonAD(), nil
 	}
-	return wabin.JID{}, fmt.Errorf("server returned no LID for %s", wabin.MaskJID(pn))
+	return wabin.JID{}, fmt.Errorf("%w: server returned no LID for %s", ErrNotOnWhatsApp, wabin.MaskJID(pn))
 }
 
 // learnLID stores a PN<->LID mapping and moves existing phone-number
@@ -248,6 +248,13 @@ func childBytes(n *wabin.Node, tag string, size int) ([]byte, error) {
 	return b, nil
 }
 
+// be32 encodes a registration id: 4 bytes big-endian.
+func be32(v uint32) []byte { return binary.BigEndian.AppendUint32(nil, v) }
+
+// keyID3 encodes a prekey id: 3 bytes big-endian on the wire.
+func keyID3(id uint32) []byte { return be32(id)[1:] }
+
+// keyID decodes a big-endian prekey id of up to 4 bytes.
 func keyID(b []byte) uint32 {
 	var buf [4]byte
 	copy(buf[4-len(b):], b)

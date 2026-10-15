@@ -13,11 +13,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/waadv"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
+	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
 )
 
@@ -141,14 +141,14 @@ func (h *harness) pair() (*fakewa.Phone, *fakewa.Conn) {
 	if c1.Payload.GetDevicePairingData() == nil || c1.Payload.GetUsername() != 0 {
 		t.Fatal("first connection should use the registration payload")
 	}
-	must(t, c1.Send(ctx, binary.Node{
+	must(t, c1.Send(ctx, wabin.Node{
 		Tag:   "iq",
-		Attrs: binary.Attrs{"from": binary.ServerJID, "type": "set", "id": "pd-1", "xmlns": "md"},
-		Content: []binary.Node{{Tag: "pair-device", Content: []binary.Node{
+		Attrs: wabin.Attrs{"from": wabin.ServerJID, "type": "set", "id": "pd-1", "xmlns": "md"},
+		Content: []wabin.Node{{Tag: "pair-device", Content: []wabin.Node{
 			{Tag: "ref", Content: []byte("2@ref-one")}, {Tag: "ref", Content: []byte("2@ref-two")},
 		}}},
 	}))
-	ack, err := c1.ReadUntil(ctx, func(n *binary.Node) bool { id, _ := n.AttrString("id"); return id == "pd-1" })
+	ack, err := c1.ReadUntil(ctx, func(n *wabin.Node) bool { id, _ := n.AttrString("id"); return id == "pd-1" })
 	must(t, err)
 	if typ, _ := ack.AttrString("type"); typ != "result" {
 		t.Fatalf("pair-device answered with %s", ack.String())
@@ -165,7 +165,7 @@ func (h *harness) pair() (*fakewa.Phone, *fakewa.Conn) {
 	ps, err := phone.PairSuccess(qr, "ps-1")
 	must(t, err)
 	must(t, c1.Send(ctx, ps))
-	confirm, err := c1.ReadUntil(ctx, func(n *binary.Node) bool { id, _ := n.AttrString("id"); return id == "ps-1" })
+	confirm, err := c1.ReadUntil(ctx, func(n *wabin.Node) bool { id, _ := n.AttrString("id"); return id == "ps-1" })
 	must(t, err)
 	pds, ok := confirm.Child("pair-device-sign")
 	if !ok {
@@ -182,7 +182,7 @@ func (h *harness) pair() (*fakewa.Phone, *fakewa.Conn) {
 	waitEvent[PairSuccess](h)
 
 	// Server restarts the stream; the client must log in with the new identity.
-	must(t, c1.Send(ctx, binary.Node{Tag: "stream:error", Attrs: binary.Attrs{"code": "515"}}))
+	must(t, c1.Send(ctx, wabin.Node{Tag: "stream:error", Attrs: wabin.Attrs{"code": "515"}}))
 	c2 := h.accept()
 	c1.Close()
 	if c2.Payload.GetUsername() != 905550000000 || c2.Payload.GetDevice() != 12 || !c2.Payload.GetPassive() || c2.Payload.GetDevicePairingData() != nil {
@@ -195,7 +195,7 @@ func (h *harness) pair() (*fakewa.Phone, *fakewa.Conn) {
 }
 
 // serveLogin answers the post-login IQs and returns the uploaded prekey list.
-func (h *harness) serveLogin(c *fakewa.Conn, serverCount int) []binary.Node {
+func (h *harness) serveLogin(c *fakewa.Conn, serverCount int) []wabin.Node {
 	up := h.serveLoginUpload(c, serverCount)
 	if up == nil {
 		return nil
@@ -205,26 +205,17 @@ func (h *harness) serveLogin(c *fakewa.Conn, serverCount int) []binary.Node {
 }
 
 // serveLoginUpload is serveLogin returning the whole prekey upload IQ.
-func (h *harness) serveLoginUpload(c *fakewa.Conn, serverCount int) *binary.Node {
+func (h *harness) serveLoginUpload(c *fakewa.Conn, serverCount int) *wabin.Node {
 	t, ctx := h.t, h.ctx
-	must(t, c.Send(ctx, binary.Node{Tag: "success", Attrs: binary.Attrs{"t": "1700000000", "lid": binary.JID{User: "1" + testUser, Server: binary.ServerLID}}}))
-	q, err := c.ReadIQ(ctx, "encrypt")
+	must(t, c.Send(ctx, wabin.Node{Tag: "success", Attrs: wabin.Attrs{"t": "1700000000", "lid": wabin.JID{User: "1" + testUser, Server: wabin.ServerLID}}}))
+	uploaded, err := c.ServeLogin(ctx, serverCount)
 	must(t, err)
-	id, _ := q.AttrString("id")
-	must(t, c.Send(ctx, fakewa.Result(id, binary.Node{Tag: "count", Attrs: binary.Attrs{"value": serverCount}})))
-	var uploaded *binary.Node
-	next, err := c.ReadUntil(ctx, func(n *binary.Node) bool {
-		ns, _ := n.AttrString("xmlns")
-		return n.Tag == "iq" && (ns == "encrypt" || ns == "passive")
-	})
-	must(t, err)
-	if ns, _ := next.AttrString("xmlns"); ns == "encrypt" {
-		uploaded = next
-		skey, ok := next.Child("skey")
+	if uploaded != nil {
+		skey, ok := uploaded.Child("skey")
 		if !ok {
 			t.Fatal("upload without signed prekey")
 		}
-		ident, _ := next.Child("identity")
+		ident, _ := uploaded.Child("identity")
 		identPub, _ := ident.Bytes()
 		val, _ := skey.Child("value")
 		sig, _ := skey.Child("signature")
@@ -233,16 +224,7 @@ func (h *harness) serveLoginUpload(c *fakewa.Conn, serverCount int) *binary.Node
 		if !keys.VerifySlice(identPub, append([]byte{keys.DJBType}, v...), sg) {
 			t.Fatal("uploaded signed prekey signature invalid")
 		}
-		id, _ := next.AttrString("id")
-		must(t, c.Send(ctx, fakewa.Result(id)))
-		next, err = c.ReadIQ(ctx, "passive")
-		must(t, err)
 	}
-	if _, ok := next.Child("active"); !ok {
-		t.Fatalf("expected passive/active iq, got %s", next.String())
-	}
-	id, _ = next.AttrString("id")
-	must(t, c.Send(ctx, fakewa.Result(id)))
 	waitEvent[Connected](h)
 	return uploaded
 }
@@ -261,13 +243,13 @@ func TestPairLoginAndLogout(t *testing.T) {
 	}
 	dev, err := h.store.LoadDevice(h.ctx, h.inst)
 	must(t, err)
-	if !dev.IsPaired() || dev.JID.User != testUser || dev.LID.Server != binary.ServerLID || len(dev.Account) == 0 {
+	if !dev.IsPaired() || dev.JID.User != testUser || dev.LID.Server != wabin.ServerLID || len(dev.Account) == 0 {
 		t.Fatalf("pairing not persisted: %+v", dev)
 	}
 
 	// Logout from the phone.
-	must(t, c2.Send(h.ctx, binary.Node{Tag: "stream:error", Attrs: binary.Attrs{"code": "401"},
-		Content: []binary.Node{{Tag: "conflict", Attrs: binary.Attrs{"type": "device_removed"}}}}))
+	must(t, c2.Send(h.ctx, wabin.Node{Tag: "stream:error", Attrs: wabin.Attrs{"code": "401"},
+		Content: []wabin.Node{{Tag: "conflict", Attrs: wabin.Attrs{"type": "device_removed"}}}}))
 	if err := h.waitRun(); !errors.Is(err, ErrLoggedOut) {
 		t.Fatalf("Run returned %v, want ErrLoggedOut", err)
 	}
@@ -297,7 +279,7 @@ func TestRestartLogsInWithoutQR(t *testing.T) {
 func TestReplacedStops(t *testing.T) {
 	h := newHarness(t, nil)
 	c := h.accept()
-	must(t, c.Send(h.ctx, binary.Node{Tag: "stream:error", Content: []binary.Node{{Tag: "conflict", Attrs: binary.Attrs{"type": "replaced"}}}}))
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "stream:error", Content: []wabin.Node{{Tag: "conflict", Attrs: wabin.Attrs{"type": "replaced"}}}}))
 	if err := h.waitRun(); !errors.Is(err, ErrReplaced) {
 		t.Fatalf("got %v", err)
 	}
@@ -306,7 +288,7 @@ func TestReplacedStops(t *testing.T) {
 func TestOutdatedStops(t *testing.T) {
 	h := newHarness(t, nil)
 	c := h.accept()
-	must(t, c.Send(h.ctx, binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "405"}}))
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "405"}}))
 	if err := h.waitRun(); !errors.Is(err, ErrClientOutdated) {
 		t.Fatalf("got %v", err)
 	}
@@ -333,23 +315,10 @@ func TestQRTimeout(t *testing.T) {
 	// Shorten the wait by sending a single ref; the client still waits the
 	// first-ref timeout, so only check that the QR is shown and that a
 	// broken connection while waiting leads to reconnection, not a hang.
-	must(t, c.Send(h.ctx, binary.Node{Tag: "iq", Attrs: binary.Attrs{"from": binary.ServerJID, "type": "set", "id": "x", "xmlns": "md"},
-		Content: []binary.Node{{Tag: "pair-device", Content: []binary.Node{{Tag: "ref", Content: []byte("2@only")}}}}}))
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "iq", Attrs: wabin.Attrs{"from": wabin.ServerJID, "type": "set", "id": "x", "xmlns": "md"},
+		Content: []wabin.Node{{Tag: "pair-device", Content: []wabin.Node{{Tag: "ref", Content: []byte("2@only")}}}}}))
 	waitEvent[QRCode](h)
 	c.Close()
 	waitEvent[Disconnected](h)
 	h.accept()
-}
-
-func TestBackoff(t *testing.T) {
-	b := Backoff{Min: time.Second, Max: 8 * time.Second}
-	for n := 1; n <= 10; n++ {
-		for range 100 {
-			d := b.Delay(n)
-			ceiling := min(time.Second<<(n-1), 8*time.Second)
-			if d < 500*time.Millisecond || d > ceiling {
-				t.Fatalf("attempt %d: delay %s out of [0.5s, %s]", n, d, ceiling)
-			}
-		}
-	}
 }

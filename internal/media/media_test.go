@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/mdenesfe/wax/internal/backoff"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -107,7 +110,7 @@ func TestTransfer(t *testing.T) {
 	}))
 	defer srv.Close()
 	host := strings.TrimPrefix(srv.URL, "http://")
-	tr := &Transfer{Scheme: "http"}
+	tr := &Transfer{Scheme: "http", Retry: backoff.Policy{Min: time.Millisecond, Max: time.Millisecond}}
 	conn := &Conn{Auth: "secret", Hosts: []string{host}}
 	enc, _ := Encrypt([]byte("picture bytes"), Image)
 	res, err := tr.Upload(context.Background(), conn, enc, Image)

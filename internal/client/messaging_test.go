@@ -8,11 +8,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Placeholder identities for a contact ("Bob"); not real accounts.

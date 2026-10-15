@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Errors returned by IQ requests.
@@ -24,7 +24,7 @@ var (
 type IQError struct {
 	Code string
 	Text string
-	Node *binary.Node
+	Node *wabin.Node
 }
 
 func (e *IQError) Error() string { return fmt.Sprintf("iq error %s: %s", e.Code, e.Text) }
@@ -57,9 +57,9 @@ type session struct {
 	cancel context.CancelFunc
 
 	waitersMu sync.Mutex
-	waiters   map[string]chan *binary.Node
+	waiters   map[string]chan *wabin.Node
 
-	queue chan *binary.Node
+	queue chan *wabin.Node
 	wg    sync.WaitGroup
 
 	endOnce sync.Once
@@ -93,10 +93,10 @@ func (c *Client) runSession(ctx context.Context, dev *store.Device) sessionResul
 	s := &session{
 		c: c, dev: dev, conn: conn, ctx: sctx, cancel: cancel,
 		log:     c.log.With("paired", dev.IsPaired()),
-		waiters: make(map[string]chan *binary.Node),
-		queue:   make(chan *binary.Node, handlerQueueSize),
+		waiters: make(map[string]chan *wabin.Node),
+		queue:   make(chan *wabin.Node, handlerQueueSize),
 	}
-	s.log.Info("connected", "jid", binary.MaskJID(dev.JID))
+	s.log.Info("connected", "jid", wabin.MaskJID(dev.JID))
 	if dev.PushName != "" {
 		c.pushName.Store(dev.PushName)
 	}
@@ -157,7 +157,7 @@ func (s *session) recoverInto(name string) {
 func (s *session) readLoop() {
 	defer s.wg.Done()
 	defer s.recoverInto("reader")
-	format := binary.FormatOptions{Mask: !s.c.cfg.DumpUnmasked}
+	format := wabin.FormatOptions{Mask: !s.c.cfg.DumpUnmasked}
 	for {
 		n, err := s.conn.ReadNode(s.ctx)
 		var decErr *DecodeError
@@ -195,7 +195,7 @@ func (s *session) handleLoop() {
 	}
 }
 
-func (s *session) handleSafely(n *binary.Node) {
+func (s *session) handleSafely(n *wabin.Node) {
 	defer func() {
 		// A bug in one handler must not take the session down: log and
 		// continue with the next node.
@@ -206,15 +206,15 @@ func (s *session) handleSafely(n *binary.Node) {
 	s.handleNode(n)
 }
 
-func (s *session) sendNode(n binary.Node) error {
+func (s *session) sendNode(n wabin.Node) error {
 	return s.conn.SendNode(s.ctx, n)
 }
 
 // sendIQ sends an IQ and waits for the response with the same id. An
 // <iq type="error"> response is returned as *IQError.
-func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Duration) (*binary.Node, error) {
+func (s *session) sendIQ(ctx context.Context, n wabin.Node, timeout time.Duration) (*wabin.Node, error) {
 	if n.Attrs == nil {
-		n.Attrs = binary.Attrs{}
+		n.Attrs = wabin.Attrs{}
 	}
 	id, _ := n.Attrs["id"].(string)
 	if id == "" {
@@ -237,11 +237,11 @@ func (s *session) sendIQ(ctx context.Context, n binary.Node, timeout time.Durati
 }
 
 // sendAndWait sends n and waits for the iq result/error or ack carrying id.
-func (s *session) sendAndWait(ctx context.Context, n binary.Node, id string, timeout time.Duration) (*binary.Node, error) {
+func (s *session) sendAndWait(ctx context.Context, n wabin.Node, id string, timeout time.Duration) (*wabin.Node, error) {
 	if timeout <= 0 {
 		timeout = defaultIQTimeout
 	}
-	ch := make(chan *binary.Node, 1)
+	ch := make(chan *wabin.Node, 1)
 	s.waitersMu.Lock()
 	if s.waiters == nil {
 		s.waitersMu.Unlock()
@@ -278,7 +278,7 @@ func (s *session) sendAndWait(ctx context.Context, n binary.Node, id string, tim
 }
 
 // deliverResponse hands iq results/errors and acks to the waiting sender.
-func (s *session) deliverResponse(n *binary.Node) bool {
+func (s *session) deliverResponse(n *wabin.Node) bool {
 	switch n.Tag {
 	case "iq":
 		if typ, _ := n.AttrString("type"); typ != "result" && typ != "error" {

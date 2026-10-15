@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/signalstore"
 	"github.com/mdenesfe/wax/internal/proto/signalwire"
@@ -31,7 +32,7 @@ type senderMessageKey struct {
 
 // keys derives IV (16) and cipher key (32) from the message key seed.
 func (k senderMessageKey) keys() (iv [16]byte, key [32]byte) {
-	out := hkdfDerive(k.seed[:], nil, infoGroup, 48)
+	out := cryptoutil.HKDF(k.seed[:], nil, infoGroup, 48)
 	copy(iv[:], out[:16])
 	copy(key[:], out[16:])
 	return

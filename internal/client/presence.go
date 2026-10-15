@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // ErrNoPushName is returned when presence is sent without a known display name.

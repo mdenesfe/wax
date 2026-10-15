@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/client"
 	"github.com/mdenesfe/wax/internal/keys"
+	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
 )
 
@@ -110,7 +110,7 @@ func run(ctx context.Context, log *slog.Logger, versionFlag string, checkVersion
 
 	go keepAlive(ctx, log, conn)
 
-	format := binary.FormatOptions{Mask: !unmask}
+	format := wabin.FormatOptions{Mask: !unmask}
 	for {
 		n, err := conn.ReadNode(ctx)
 		var decErr *client.DecodeError
@@ -139,7 +139,7 @@ func run(ctx context.Context, log *slog.Logger, versionFlag string, checkVersion
 }
 
 // respond sends the minimal replies the server expects in Phase 1.
-func respond(ctx context.Context, log *slog.Logger, conn *client.Conn, n *binary.Node) error {
+func respond(ctx context.Context, log *slog.Logger, conn *client.Conn, n *wabin.Node) error {
 	if n.Tag != "iq" {
 		return nil
 	}
@@ -159,8 +159,8 @@ func respond(ctx context.Context, log *slog.Logger, conn *client.Conn, n *binary
 	return nil
 }
 
-func iqResult(id string) binary.Node {
-	return binary.Node{Tag: "iq", Attrs: binary.Attrs{"to": binary.ServerJID, "type": "result", "id": id}}
+func iqResult(id string) wabin.Node {
+	return wabin.Node{Tag: "iq", Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "result", "id": id}}
 }
 
 // keepAlive sends w:p pings every 20-30 s, like WhatsApp Web.
@@ -171,10 +171,10 @@ func keepAlive(ctx context.Context, log *slog.Logger, conn *client.Conn) {
 			return
 		case <-time.After(20*time.Second + rand.N(10*time.Second)):
 		}
-		ping := binary.Node{
+		ping := wabin.Node{
 			Tag:     "iq",
-			Attrs:   binary.Attrs{"id": conn.NextID(), "to": binary.ServerJID, "type": "get", "xmlns": "w:p"},
-			Content: []binary.Node{{Tag: "ping"}},
+			Attrs:   wabin.Attrs{"id": conn.NextID(), "to": wabin.ServerJID, "type": "get", "xmlns": "w:p"},
+			Content: []wabin.Node{{Tag: "ping"}},
 		}
 		if err := conn.SendNode(ctx, ping); err != nil {
 			if ctx.Err() == nil {
@@ -186,6 +186,6 @@ func keepAlive(ctx context.Context, log *slog.Logger, conn *client.Conn) {
 	}
 }
 
-func attrSummary(n *binary.Node, opts binary.FormatOptions) string {
-	return binary.Node{Tag: n.Tag, Attrs: n.Attrs}.Format(opts)
+func attrSummary(n *wabin.Node, opts wabin.FormatOptions) string {
+	return wabin.Node{Tag: n.Tag, Attrs: n.Attrs}.Format(opts)
 }

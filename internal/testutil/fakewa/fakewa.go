@@ -7,8 +7,6 @@ package fakewa
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -21,16 +19,17 @@ import (
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/wa6"
 	"github.com/mdenesfe/wax/internal/proto/waadv"
 	"github.com/mdenesfe/wax/internal/proto/wacert"
 	"github.com/mdenesfe/wax/internal/transport"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Prologue is the connection header the client must send.
-var Prologue = []byte{'W', 'A', 6, binary.DictVersion}
+var Prologue = []byte{'W', 'A', 6, wabin.DictVersion}
 
 // Server is a fake WhatsApp chat endpoint.
 type Server struct {
@@ -155,8 +154,8 @@ type Conn struct {
 }
 
 // Send encodes and sends a node to the client.
-func (c *Conn) Send(ctx context.Context, n binary.Node) error {
-	data, err := binary.Marshal(n)
+func (c *Conn) Send(ctx context.Context, n wabin.Node) error {
+	data, err := wabin.Marshal(n)
 	if err != nil {
 		return err
 	}
@@ -164,22 +163,22 @@ func (c *Conn) Send(ctx context.Context, n binary.Node) error {
 }
 
 // Read returns the next node from the client.
-func (c *Conn) Read(ctx context.Context) (*binary.Node, error) {
+func (c *Conn) Read(ctx context.Context) (*wabin.Node, error) {
 	frame, err := c.nc.Receive(ctx)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := binary.Unpack(frame)
+	payload, err := wabin.Unpack(frame)
 	if err != nil {
 		return nil, err
 	}
-	return binary.Unmarshal(payload)
+	return wabin.Unmarshal(payload)
 }
 
 // ReadIQ reads until an iq with the given xmlns arrives, answering keepalive
 // pings on the way.
-func (c *Conn) ReadIQ(ctx context.Context, xmlns string) (*binary.Node, error) {
-	return c.ReadUntil(ctx, func(n *binary.Node) bool {
+func (c *Conn) ReadIQ(ctx context.Context, xmlns string) (*wabin.Node, error) {
+	return c.ReadUntil(ctx, func(n *wabin.Node) bool {
 		ns, _ := n.AttrString("xmlns")
 		return n.Tag == "iq" && ns == xmlns
 	})
@@ -187,7 +186,7 @@ func (c *Conn) ReadIQ(ctx context.Context, xmlns string) (*binary.Node, error) {
 
 // ReadUntil reads until match returns true. Keepalive pings are answered
 // automatically; other non-matching nodes are discarded.
-func (c *Conn) ReadUntil(ctx context.Context, match func(*binary.Node) bool) (*binary.Node, error) {
+func (c *Conn) ReadUntil(ctx context.Context, match func(*wabin.Node) bool) (*wabin.Node, error) {
 	for {
 		n, err := c.Read(ctx)
 		if err != nil {
@@ -214,12 +213,46 @@ func (c *Conn) Close() {
 }
 
 // Result builds an empty iq result for id.
-func Result(id string, content ...binary.Node) binary.Node {
-	n := binary.Node{Tag: "iq", Attrs: binary.Attrs{"from": binary.ServerJID, "type": "result", "id": id}}
+func Result(id string, content ...wabin.Node) wabin.Node {
+	n := wabin.Node{Tag: "iq", Attrs: wabin.Attrs{"from": wabin.ServerJID, "type": "result", "id": id}}
 	if len(content) > 0 {
 		n.Content = content
 	}
 	return n
+}
+
+// ServeLogin answers the IQs a client sends after <success>: the prekey
+// count query (with serverCount), an optional prekey upload and the
+// passive/active switch. It returns the upload IQ, or nil if the client did
+// not upload.
+func (c *Conn) ServeLogin(ctx context.Context, serverCount int) (*wabin.Node, error) {
+	q, err := c.ReadIQ(ctx, "encrypt")
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Send(ctx, Result(q.Attrs["id"].(string), wabin.Node{Tag: "count", Attrs: wabin.Attrs{"value": serverCount}})); err != nil {
+		return nil, err
+	}
+	var upload *wabin.Node
+	for {
+		next, err := c.ReadUntil(ctx, func(n *wabin.Node) bool {
+			ns, _ := n.AttrString("xmlns")
+			return n.Tag == "iq" && (ns == "encrypt" || ns == "passive")
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := c.Send(ctx, Result(next.Attrs["id"].(string))); err != nil {
+			return nil, err
+		}
+		if ns, _ := next.AttrString("xmlns"); ns == "passive" {
+			if !next.HasChild("active") {
+				return nil, fmt.Errorf("fakewa: expected <active>, got %s", next.String())
+			}
+			return upload, nil
+		}
+		upload = next
+	}
 }
 
 // serverFrameConn is the server side of the framed WebSocket: it strips the
@@ -300,8 +333,8 @@ func ParseQR(content string) (*QR, error) {
 // Phone simulates the primary device that scans the QR code.
 type Phone struct {
 	Account *keys.SigningKey
-	JID     binary.JID // the companion JID the phone assigns (with device)
-	LID     binary.JID
+	JID     wabin.JID // the companion JID the phone assigns (with device)
+	LID     wabin.JID
 }
 
 // NewPhone creates a phone with a fresh account key. Use the test number
@@ -313,19 +346,19 @@ func NewPhone(user string, device uint16) (*Phone, error) {
 	}
 	return &Phone{
 		Account: acc,
-		JID:     binary.JID{User: user, Device: device, Server: binary.ServerUser},
-		LID:     binary.JID{User: "1" + user, Device: device, Server: binary.ServerLID},
+		JID:     wabin.JID{User: user, Device: device, Server: wabin.ServerUser},
+		LID:     wabin.JID{User: "1" + user, Device: device, Server: wabin.ServerLID},
 	}, nil
 }
 
 // PairSuccess builds the pair-success IQ the server relays after the phone
 // scanned qr.
-func (p *Phone) PairSuccess(qr *QR, iqID string) (binary.Node, error) {
+func (p *Phone) PairSuccess(qr *QR, iqID string) (wabin.Node, error) {
 	details, err := proto.Marshal(&waadv.ADVDeviceIdentity{
 		RawID: proto.Uint32(42), Timestamp: proto.Uint64(uint64(time.Now().Unix())), KeyIndex: proto.Uint32(1),
 	})
 	if err != nil {
-		return binary.Node{}, err
+		return wabin.Node{}, err
 	}
 	msg := append(append([]byte{6, 0}, details...), qr.IdentityPub[:]...)
 	sig := p.Account.Sign(msg)
@@ -333,21 +366,19 @@ func (p *Phone) PairSuccess(qr *QR, iqID string) (binary.Node, error) {
 		Details: details, AccountSignatureKey: p.Account.Pub[:], AccountSignature: sig[:],
 	})
 	if err != nil {
-		return binary.Node{}, err
+		return wabin.Node{}, err
 	}
-	mac := hmac.New(sha256.New, qr.AdvSecret[:])
-	mac.Write(signed)
-	container, err := proto.Marshal(&waadv.ADVSignedDeviceIdentityHMAC{Details: signed, HMAC: mac.Sum(nil)})
+	container, err := proto.Marshal(&waadv.ADVSignedDeviceIdentityHMAC{Details: signed, HMAC: cryptoutil.HMACSHA256(qr.AdvSecret[:], signed)})
 	if err != nil {
-		return binary.Node{}, err
+		return wabin.Node{}, err
 	}
-	return binary.Node{
+	return wabin.Node{
 		Tag:   "iq",
-		Attrs: binary.Attrs{"from": binary.ServerJID, "type": "set", "id": iqID, "xmlns": "md", "t": fmt.Sprint(time.Now().Unix())},
-		Content: []binary.Node{{Tag: "pair-success", Content: []binary.Node{
+		Attrs: wabin.Attrs{"from": wabin.ServerJID, "type": "set", "id": iqID, "xmlns": "md", "t": fmt.Sprint(time.Now().Unix())},
+		Content: []wabin.Node{{Tag: "pair-success", Content: []wabin.Node{
 			{Tag: "device-identity", Content: container},
-			{Tag: "platform", Attrs: binary.Attrs{"name": "android"}},
-			{Tag: "device", Attrs: binary.Attrs{"jid": p.JID, "lid": p.LID}},
+			{Tag: "platform", Attrs: wabin.Attrs{"name": "android"}},
+			{Tag: "device", Attrs: wabin.Attrs{"jid": p.JID, "lid": p.LID}},
 		}}},
 	}, nil
 }

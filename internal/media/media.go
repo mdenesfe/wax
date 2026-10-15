@@ -14,14 +14,14 @@ package media
 
 import (
 	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
 	"fmt"
+
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 )
 
 // Type selects the HKDF info string and the upload path.
@@ -73,10 +73,7 @@ func DeriveKeys(mediaKey []byte, t Type) (Keys, error) {
 	if len(mediaKey) != 32 {
 		return Keys{}, fmt.Errorf("media: media key is %d bytes", len(mediaKey))
 	}
-	out, err := hkdf.Key(sha256.New, mediaKey, nil, string(t), 112)
-	if err != nil {
-		return Keys{}, err
-	}
+	out := cryptoutil.HKDF(mediaKey, nil, string(t), 112)
 	var k Keys
 	copy(k.IV[:], out[:16])
 	copy(k.CipherKey[:], out[16:48])
@@ -105,18 +102,11 @@ func Encrypt(plaintext []byte, t Type) (*Encrypted, error) {
 	if err != nil {
 		return nil, err
 	}
-	block, _ := aes.NewCipher(k.CipherKey[:])
-	pad := aes.BlockSize - len(plaintext)%aes.BlockSize
-	ct := make([]byte, len(plaintext)+pad, len(plaintext)+pad+macLength)
-	copy(ct, plaintext)
-	for i := len(plaintext); i < len(ct); i++ {
-		ct[i] = byte(pad)
+	ct, err := cryptoutil.CBCEncrypt(k.CipherKey[:], k.IV[:], plaintext)
+	if err != nil {
+		return nil, err
 	}
-	cipher.NewCBCEncrypter(block, k.IV[:]).CryptBlocks(ct, ct)
-	m := hmac.New(sha256.New, k.MACKey[:])
-	m.Write(k.IV[:])
-	m.Write(ct)
-	data := append(ct, m.Sum(nil)[:macLength]...)
+	data := append(ct, cryptoutil.HMACSHA256(k.MACKey[:], k.IV[:], ct)[:macLength]...)
 	fileHash := sha256.Sum256(plaintext)
 	encHash := sha256.Sum256(data)
 	return &Encrypted{Data: data, MediaKey: mk, FileSHA256: fileHash[:], FileEncSHA256: encHash[:], FileLength: uint64(len(plaintext))}, nil
@@ -139,25 +129,13 @@ func Decrypt(blob, mediaKey []byte, t Type, fileEncSHA256, fileSHA256 []byte) ([
 		return nil, err
 	}
 	ct, mac := blob[:len(blob)-macLength], blob[len(blob)-macLength:]
-	m := hmac.New(sha256.New, k.MACKey[:])
-	m.Write(k.IV[:])
-	m.Write(ct)
-	if !hmac.Equal(m.Sum(nil)[:macLength], mac) {
+	if !hmac.Equal(cryptoutil.HMACSHA256(k.MACKey[:], k.IV[:], ct)[:macLength], mac) {
 		return nil, ErrInvalidMAC
 	}
-	block, _ := aes.NewCipher(k.CipherKey[:])
-	pt := make([]byte, len(ct))
-	cipher.NewCBCDecrypter(block, k.IV[:]).CryptBlocks(pt, ct)
-	pad := int(pt[len(pt)-1])
-	if pad == 0 || pad > aes.BlockSize {
-		return nil, ErrInvalidLength
+	pt, err := cryptoutil.CBCDecrypt(k.CipherKey[:], k.IV[:], ct)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidLength, err)
 	}
-	for _, b := range pt[len(pt)-pad:] {
-		if int(b) != pad {
-			return nil, ErrInvalidLength
-		}
-	}
-	pt = pt[:len(pt)-pad]
 	if len(fileSHA256) > 0 {
 		sum := sha256.Sum256(pt)
 		if subtle.ConstantTimeCompare(sum[:], fileSHA256) != 1 {

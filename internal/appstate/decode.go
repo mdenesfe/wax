@@ -1,15 +1,13 @@
 package appstate
 
 import (
-	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/hmac"
 	"encoding/json"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/proto/waserversync"
 	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 )
@@ -92,22 +90,12 @@ func decodeMutation(kc *keyCache, op waserversync.SyncdMutation_SyncdOperation, 
 	if !hmac.Equal(ContentMAC(int32(op), content, keyID, ks.ValueMAC), valueMAC) {
 		return nil, ErrContentMAC
 	}
-	iv, ct := content[:16], content[16:]
-	if len(ct)%aes.BlockSize != 0 || len(ct) == 0 {
-		return nil, fmt.Errorf("%w: ciphertext length %d", ErrMalformedMutation, len(ct))
-	}
-	block, err := aes.NewCipher(ks.ValueEncryption)
+	pt, err := cryptoutil.CBCDecrypt(ks.ValueEncryption, content[:16], content[16:])
 	if err != nil {
-		return nil, err
-	}
-	pt := make([]byte, len(ct))
-	cipher.NewCBCDecrypter(block, iv).CryptBlocks(pt, ct)
-	pad := int(pt[len(pt)-1])
-	if pad == 0 || pad > aes.BlockSize || !bytes.Equal(pt[len(pt)-pad:], bytes.Repeat([]byte{byte(pad)}, pad)) {
-		return nil, fmt.Errorf("%w: bad padding", ErrMalformedMutation)
+		return nil, fmt.Errorf("%w: %w", ErrMalformedMutation, err)
 	}
 	var data wasyncaction.SyncActionData
-	if err := proto.Unmarshal(pt[:len(pt)-pad], &data); err != nil {
+	if err := proto.Unmarshal(pt, &data); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMalformedMutation, err)
 	}
 	indexMAC := record.GetIndex().GetBlob()
@@ -142,9 +130,9 @@ func ApplySnapshot(collection string, ss *waserversync.SyncdSnapshot, l Lookup) 
 	if err != nil {
 		return nil, err
 	}
-	if !hmac.Equal(SnapshotMAC(res.State, collection, ks.SnapshotMAC), ss.GetMac()) {
-		return nil, fmt.Errorf("%w: %s snapshot v%d", ErrSnapshotMAC, collection, res.State.Version)
-	}
+	// A mismatch leaves the state unverified (see HashState); the records
+	// are still authenticated one by one below.
+	res.State.Unverified = !hmac.Equal(SnapshotMAC(res.State, collection, ks.SnapshotMAC), ss.GetMac())
 	for i, r := range ss.GetRecords() {
 		m, err := decodeMutation(kc, waserversync.SyncdMutation_SET, r, res.State.Version)
 		if err != nil {
@@ -156,55 +144,66 @@ func ApplySnapshot(collection string, ss *waserversync.SyncdSnapshot, l Lookup) 
 	return res, nil
 }
 
-// ApplyPatch verifies and decodes one patch on top of state.
-func ApplyPatch(collection string, state HashState, p *waserversync.SyncdPatch, l Lookup) (*Result, error) {
-	kc := &keyCache{l: l}
-	res := &Result{State: HashState{Version: p.GetVersion().GetVersion(), Hash: state.Hash}}
-	muts := p.GetMutations()
-	var added, removed, valueMACs [][]byte
+// advanceHash computes the state after applying muts on top of state, and
+// returns every mutation's value MAC in order. Each SET adds its value MAC;
+// whatever value the index had before (earlier in this patch, or stored)
+// is subtracted. A map of the patch's latest value per index keeps this
+// O(n) instead of rescanning earlier mutations.
+func advanceHash(state HashState, version uint64, muts []*waserversync.SyncdMutation, l Lookup) (HashState, [][]byte, error) {
+	valueMACs := make([][]byte, len(muts))
+	var added, removed [][]byte
+	latest := make(map[string][]byte, len(muts)) // index MAC → value MAC (nil after REMOVE)
 	for i, m := range muts {
 		vm, err := valueMACOf(m.GetRecord())
 		if err != nil {
-			return nil, fmt.Errorf("mutation %d: %w", i, err)
+			return state, nil, fmt.Errorf("mutation %d: %w", i, err)
 		}
-		valueMACs = append(valueMACs, vm)
-		if m.GetOperation() == waserversync.SyncdMutation_SET {
-			added = append(added, vm)
-		}
-		// Whatever value this index had before (earlier in this patch, or
-		// stored) leaves the hash.
+		valueMACs[i] = vm
 		indexMAC := m.GetRecord().GetIndex().GetBlob()
-		prev, found := []byte(nil), false
-		for j := i - 1; j >= 0; j-- {
-			if hmac.Equal(muts[j].GetRecord().GetIndex().GetBlob(), indexMAC) {
-				found = true
-				if muts[j].GetOperation() == waserversync.SyncdMutation_SET {
-					prev = valueMACs[j]
-				}
-				break
-			}
-		}
-		if !found {
+		prev, seen := latest[string(indexMAC)]
+		if !seen {
 			if prev, err = l.ValueMAC(indexMAC); err != nil {
-				return nil, err
+				return state, nil, fmt.Errorf("previous value mac: %w", err)
 			}
 		}
 		if prev != nil {
 			removed = append(removed, prev)
 		}
+		if m.GetOperation() == waserversync.SyncdMutation_SET {
+			added = append(added, vm)
+			latest[string(indexMAC)] = vm
+		} else {
+			latest[string(indexMAC)] = nil
+		}
 	}
-	res.State.SubtractThenAdd(removed, added)
+	next := HashState{Version: version, Hash: state.Hash}
+	next.SubtractThenAdd(removed, added)
+	return next, valueMACs, nil
+}
+
+// ApplyPatch verifies and decodes one patch on top of state.
+func ApplyPatch(collection string, state HashState, p *waserversync.SyncdPatch, l Lookup) (*Result, error) {
+	kc := &keyCache{l: l}
+	next, valueMACs, err := advanceHash(state, p.GetVersion().GetVersion(), p.GetMutations(), l)
+	if err != nil {
+		return nil, err
+	}
+	res := &Result{State: next}
+	muts := p.GetMutations()
 	ks, err := kc.get(p.GetKeyID().GetID())
 	if err != nil {
 		return nil, err
 	}
-	snap := SnapshotMAC(res.State, collection, ks.SnapshotMAC)
-	if !hmac.Equal(snap, p.GetSnapshotMAC()) {
-		return nil, fmt.Errorf("%w: %s patch v%d", ErrSnapshotMAC, collection, res.State.Version)
-	}
+	// The patch MAC covers every value MAC of the patch independently of
+	// our LTHash, so it is checked even on an unverified state.
 	if !hmac.Equal(PatchMAC(p.GetSnapshotMAC(), valueMACs, res.State.Version, collection, ks.PatchMAC), p.GetPatchMAC()) {
 		return nil, fmt.Errorf("%w: %s patch v%d", ErrPatchMAC, collection, res.State.Version)
 	}
+	match := hmac.Equal(SnapshotMAC(res.State, collection, ks.SnapshotMAC), p.GetSnapshotMAC())
+	if !match && !state.Unverified {
+		return nil, fmt.Errorf("%w: %s patch v%d", ErrSnapshotMAC, collection, res.State.Version)
+	}
+	res.State.Unverified = !match
 	for i, m := range muts {
 		dm, err := decodeMutation(kc, m.GetOperation(), m.GetRecord(), res.State.Version)
 		if err != nil {

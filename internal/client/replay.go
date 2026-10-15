@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // replayBatch bounds how many deferred stanzas are processed per login, so

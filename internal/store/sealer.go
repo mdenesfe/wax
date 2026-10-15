@@ -1,15 +1,14 @@
 package store
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 )
 
 // MasterKeySize is the required length of the master key.
@@ -58,15 +57,7 @@ func newSealer(masterKey []byte) (*sealer, error) {
 	if len(masterKey) != MasterKeySize {
 		return nil, fmt.Errorf("%w: %d bytes, need %d", ErrMasterKey, len(masterKey), MasterKeySize)
 	}
-	dk, err := hkdf.Key(sha256.New, masterKey, nil, "wax/store/secrets/v1", 32)
-	if err != nil {
-		return nil, fmt.Errorf("store: derive data key: %w", err)
-	}
-	block, err := aes.NewCipher(dk)
-	if err != nil {
-		return nil, err
-	}
-	aead, err := cipher.NewGCM(block)
+	aead, err := cryptoutil.NewGCM(cryptoutil.HKDF(masterKey, nil, "wax/store/secrets/v1", 32))
 	if err != nil {
 		return nil, err
 	}

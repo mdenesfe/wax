@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/mdenesfe/wax/internal/appstate"
 )
 
 // --- app state keys -------------------------------------------------------------
@@ -46,35 +48,36 @@ func (s *Store) AppStateKeyCount(ctx context.Context, instanceID string) (int, e
 
 // --- versions and MACs -------------------------------------------------------------
 
-// AppStateVersion returns a collection's version and LTHash (0 and zero
-// hash if never synced).
-func (s *Store) AppStateVersion(ctx context.Context, instanceID, collection string) (uint64, [128]byte, error) {
+// AppStateVersion returns a collection's hash state (the zero state if it
+// was never synced).
+func (s *Store) AppStateVersion(ctx context.Context, instanceID, collection string) (appstate.HashState, error) {
+	var st appstate.HashState
 	var v int64
 	var h []byte
-	var out [128]byte
-	q := `SELECT version, hash FROM wax_appstate_versions WHERE instance_id = $1 AND collection = $2`
+	q := `SELECT version, hash, unverified FROM wax_appstate_versions WHERE instance_id = $1 AND collection = $2`
 	if s.inTx {
 		q += ` FOR UPDATE`
 	}
-	err := s.db.QueryRow(ctx, q, instanceID, collection).Scan(&v, &h)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, out, nil
+	err := s.db.QueryRow(ctx, q, instanceID, collection).Scan(&v, &h, &st.Unverified)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return appstate.HashState{}, nil
+	case err != nil:
+		return st, fmt.Errorf("store: app state version: %w", err)
+	case len(h) != len(st.Hash):
+		return st, fmt.Errorf("store: app state hash of %s is %d bytes", collection, len(h))
 	}
-	if err != nil {
-		return 0, out, fmt.Errorf("store: app state version: %w", err)
-	}
-	if len(h) != 128 {
-		return 0, out, fmt.Errorf("store: app state hash of %s is %d bytes", collection, len(h))
-	}
-	copy(out[:], h)
-	return uint64(v), out, nil
+	st.Version = uint64(v)
+	copy(st.Hash[:], h)
+	return st, nil
 }
 
-// PutAppStateVersion stores a collection's version and LTHash.
-func (s *Store) PutAppStateVersion(ctx context.Context, instanceID, collection string, version uint64, hash [128]byte) error {
-	_, err := s.db.Exec(ctx, `INSERT INTO wax_appstate_versions (instance_id, collection, version, hash) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (instance_id, collection) DO UPDATE SET version = excluded.version, hash = excluded.hash, updated_at = now()`,
-		instanceID, collection, int64(version), hash[:])
+// PutAppStateVersion stores a collection's hash state.
+func (s *Store) PutAppStateVersion(ctx context.Context, instanceID, collection string, st appstate.HashState) error {
+	_, err := s.db.Exec(ctx, `INSERT INTO wax_appstate_versions (instance_id, collection, version, hash, unverified) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (instance_id, collection) DO UPDATE
+		SET version = excluded.version, hash = excluded.hash, unverified = excluded.unverified, updated_at = now()`,
+		instanceID, collection, int64(st.Version), st.Hash[:], st.Unverified)
 	if err != nil {
 		return fmt.Errorf("store: put app state version: %w", err)
 	}
@@ -332,13 +335,13 @@ func (s *Store) GetContact(ctx context.Context, instanceID, jid string) (*Contac
 
 // Chat is a stored chat.
 type Chat struct {
-	JID           string
-	Name          string
-	LastMessageAt *time.Time
-	UnreadCount   int
-	Archived      bool
-	Pinned        bool
-	MutedUntil    *time.Time
+	JID           string     `json:"jid"`
+	Name          string     `json:"name,omitempty"`
+	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
+	UnreadCount   int        `json:"unread_count"`
+	Archived      bool       `json:"archived"`
+	Pinned        bool       `json:"pinned"`
+	MutedUntil    *time.Time `json:"muted_until,omitempty"`
 }
 
 const chatColumns = `jid, name, last_message_at, unread_count, archived, pinned, muted_until`

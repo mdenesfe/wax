@@ -4,7 +4,6 @@
 package client
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
@@ -87,20 +86,16 @@ func RegistrationPayload(cfg DeviceConfig, k RegistrationKeys) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal device props: %w", err)
 	}
-	var regID [4]byte
-	binary.BigEndian.PutUint32(regID[:], k.RegistrationID)
-	var skeyID [4]byte
-	binary.BigEndian.PutUint32(skeyID[:], k.SignedPreKeyID)
 	buildHash := cfg.Version.BuildHash()
 
 	p := basePayload(cfg)
 	p.Passive = proto.Bool(false)
 	p.Pull = proto.Bool(false)
 	p.DevicePairingData = &wa6.ClientPayload_DevicePairingRegistrationData{
-		ERegid:      regID[:],
+		ERegid:      be32(k.RegistrationID),
 		EKeytype:    []byte{keys.DJBType},
 		EIdent:      k.IdentityKey[:],
-		ESkeyID:     skeyID[1:], // the signed prekey id is sent as 3 bytes
+		ESkeyID:     keyID3(k.SignedPreKeyID),
 		ESkeyVal:    k.SignedPreKey[:],
 		ESkeySig:    k.SignedPreKeySig[:],
 		BuildHash:   buildHash[:],

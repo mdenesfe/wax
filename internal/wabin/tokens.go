@@ -4,7 +4,7 @@
 // hand; when WhatsApp bumps the dictionary version, regenerate from the
 // current WhatsApp Web client and update DictVersion.
 
-package binary
+package wabin
 
 // DictVersion is the token dictionary version, sent as the 4th byte of the
 // connection header so the server knows which tables we understand.

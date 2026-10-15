@@ -12,10 +12,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Nack codes for <ack error="...">, as used by WhatsApp clients.
@@ -114,14 +114,52 @@ func (s *session) handleMessage(n *wabin.Node) {
 	info, err := s.parseMessageInfo(n)
 	if err != nil {
 		s.log.Warn("unparseable message", "error", err)
-		s.sendAckCode(n, nackParsingError)
+		s.nack(n, nackParsingError)
 		return
 	}
 	if info.Chat.Server == wabin.ServerNewsletter || info.Sender.Server == wabin.ServerBot {
 		s.deferStanza(n, "newsletters and bots not implemented yet")
 		return
 	}
-	// Learn PN<->LID mappings as they appear.
+	encJID := s.sessionAddress(info)
+	encs := n.ChildrenByTag("enc")
+	if len(encs) == 0 {
+		if n.HasChild("unavailable") {
+			s.log.Warn("message unavailable on this device", "id", info.ID)
+			s.ack(n)
+			return
+		}
+		s.nack(n, nackUnrecognizedStanza)
+		return
+	}
+	invalid, handledAny := false, false
+	var unsupported []string
+	for i := range encs {
+		switch s.handleEnc(n, info, encJID, &encs[i]) {
+		case encHandled:
+			handledAny = true
+		case encInvalid:
+			handledAny, invalid = true, true
+		case encUnsupported:
+			t, _ := encs[i].AttrString("type")
+			unsupported = append(unsupported, t)
+		case encStop:
+			return
+		}
+	}
+	switch {
+	case !handledAny && len(unsupported) > 0:
+		s.deferStanza(n, "unsupported enc types "+strings.Join(unsupported, ","))
+	case invalid:
+		s.nack(n, nackInvalidProtobuf)
+	default:
+		s.sendMessageReceipt(n, info)
+	}
+}
+
+// sessionAddress learns PN<->LID mappings from a message and returns the
+// address its Signal session is keyed by (the LID when known).
+func (s *session) sessionAddress(info *MessageInfo) wabin.JID {
 	if !info.SenderAlt.IsEmpty() {
 		if info.Sender.Server == wabin.ServerLID {
 			s.c.learnLID(s.ctx, info.SenderAlt, info.Sender)
@@ -129,98 +167,84 @@ func (s *session) handleMessage(n *wabin.Node) {
 			s.c.learnLID(s.ctx, info.Sender, info.SenderAlt)
 		}
 	}
-	// Sessions are keyed by LID when we know it.
 	encJID := info.Sender
-	if encJID.Server == wabin.ServerUser {
-		if info.SenderAlt.Server == wabin.ServerLID {
-			encJID = info.SenderAlt
-		} else if lid, err := s.c.cfg.Store.LIDForPN(s.ctx, s.c.cfg.InstanceID, encJID.User); err == nil && lid != "" {
-			encJID = wabin.JID{User: lid, Device: encJID.Device, Server: wabin.ServerLID}
-		}
+	if encJID.Server != wabin.ServerUser {
+		return encJID
 	}
+	if info.SenderAlt.Server == wabin.ServerLID {
+		return info.SenderAlt
+	}
+	if lid, err := s.c.cfg.Store.LIDForPN(s.ctx, s.c.cfg.InstanceID, encJID.User); err == nil && lid != "" {
+		return wabin.JID{User: lid, Device: encJID.Device, Server: wabin.ServerLID}
+	}
+	return encJID
+}
 
-	encs := n.ChildrenByTag("enc")
-	if len(encs) == 0 {
-		if _, ok := n.Child("unavailable"); ok {
-			s.log.Warn("message unavailable on this device", "id", info.ID)
-			s.sendAck(n)
-			return
-		}
-		s.sendAckCode(n, nackUnrecognizedStanza)
-		return
+// encOutcome is the result of handling one <enc> child.
+type encOutcome int
+
+const (
+	encHandled     encOutcome = iota // decrypted and dispatched (or a duplicate)
+	encInvalid                       // decrypted but unusable content
+	encUnsupported                   // enc type we cannot decrypt
+	encStop                          // the stanza was answered or must be redelivered
+)
+
+// handleEnc decrypts one <enc> and dispatches its content.
+func (s *session) handleEnc(n *wabin.Node, info *MessageInfo, encJID wabin.JID, enc *wabin.Node) encOutcome {
+	encType, _ := enc.AttrString("type")
+	var plaintext, hash []byte
+	var err error
+	switch {
+	case encType == "pkmsg" || encType == "msg":
+		plaintext, hash, err = s.decryptEnc(info, encJID, enc, encType)
+	case encType == "skmsg" && info.IsGroup:
+		plaintext, hash, err = s.decryptGroupEnc(info, encJID, enc)
+	default:
+		return encUnsupported
 	}
-	protobufFailed, handledAny := false, false
-	var unsupported []string
-	for i := range encs {
-		enc := &encs[i]
-		encType, _ := enc.AttrString("type")
-		var plaintext, hash []byte
-		var err error
-		switch {
-		case encType == "pkmsg" || encType == "msg":
-			plaintext, hash, err = s.decryptEnc(info, encJID, enc, encType)
-		case encType == "skmsg" && info.IsGroup:
-			plaintext, hash, err = s.decryptGroupEnc(info, encJID, enc)
-		default:
-			unsupported = append(unsupported, encType)
-			continue
-		}
-		if errors.Is(err, errAlreadyHandled) || errors.Is(err, signal.ErrDuplicateMessage) {
-			s.log.Debug("duplicate message ignored", "id", info.ID, "reason", err)
-			handledAny = true
-			continue
-		}
-		if err != nil {
-			s.log.Warn("decryption failed", "id", info.ID, "type", encType, "from", wabin.MaskJID(info.Sender), "error", err)
-			if s.ctx.Err() != nil {
-				return // shutting down: leave it for redelivery
-			}
+	if errors.Is(err, errAlreadyHandled) || errors.Is(err, signal.ErrDuplicateMessage) {
+		s.log.Debug("duplicate message ignored", "id", info.ID, "reason", err)
+		return encHandled
+	}
+	if err != nil {
+		s.log.Warn("decryption failed", "id", info.ID, "type", encType, "from", wabin.MaskJID(info.Sender), "error", err)
+		if s.ctx.Err() == nil { // when shutting down, leave it for redelivery
 			s.sendRetryReceipt(n, info)
-			s.sendAck(n)
+			s.ack(n)
 			s.c.emit(UndecryptableMessage{Info: *info, Err: err})
-			return
 		}
-		handledAny = true
-		if v, _ := enc.AttrString("v"); v != "2" {
-			s.log.Warn("unsupported message version", "v", v, "id", info.ID)
-			protobufFailed = true
-			s.markHandled(hash)
-			continue
-		}
-		var msg wae2e.Message
-		if err := proto.Unmarshal(plaintext, &msg); err != nil {
-			s.log.Warn("invalid message protobuf", "id", info.ID, "error", err)
-			protobufFailed = true
-			s.markHandled(hash)
-			continue
-		}
-		if skdm := msg.GetSenderKeyDistributionMessage(); skdm != nil {
-			if err := s.processSKDM(info, encJID, skdm); err != nil {
-				// Not fatal: a later skmsg from this sender will fail and
-				// trigger a retry receipt, which brings a fresh distribution.
-				s.log.Warn("could not store sender key", "id", info.ID, "error", err)
-			}
-		}
-		if hasContent(&msg) {
-			retries, _ := enc.AttrInt("count")
-			if err := s.dispatchMessage(info, &msg, int(retries)); err != nil {
-				// Leave it unacknowledged: the server redelivers it and the
-				// buffered plaintext is reused.
-				s.log.Warn("message handling failed; leaving it for redelivery", "id", info.ID, "error", err)
-				return
-			}
-		}
+		return encStop
+	}
+	var msg wae2e.Message
+	if v, _ := enc.AttrString("v"); v != "2" {
+		err = fmt.Errorf("unsupported message version %q", v)
+	} else {
+		err = proto.Unmarshal(plaintext, &msg)
+	}
+	if err != nil {
+		s.log.Warn("invalid message content", "id", info.ID, "error", err)
 		s.markHandled(hash)
+		return encInvalid
 	}
-	if !handledAny && len(unsupported) > 0 {
-		s.deferStanza(n, "unsupported enc types "+strings.Join(unsupported, ","))
-		return
+	if skdm := msg.GetSenderKeyDistributionMessage(); skdm != nil {
+		if err := s.processSKDM(info, encJID, skdm); err != nil {
+			// Not fatal: a later skmsg from this sender will fail and
+			// trigger a retry receipt, which brings a fresh distribution.
+			s.log.Warn("could not store sender key", "id", info.ID, "error", err)
+		}
 	}
-	if protobufFailed {
-		s.sendAckCode(n, nackInvalidProtobuf)
-		return
+	if hasContent(&msg) {
+		retries, _ := enc.AttrInt("count")
+		if err := s.dispatchMessage(info, &msg, int(retries)); err != nil {
+			// Leave it unacknowledged: the server redelivers it and the
+			// buffered plaintext is reused.
+			s.log.Warn("message handling failed; leaving it for redelivery", "id", info.ID, "error", err)
+			return encStop
+		}
 	}
-	s.sendMessageReceipt(n, info)
+	s.markHandled(hash)
+	return encHandled
 }
 
 // hasContent reports whether a message carries anything besides key
@@ -318,13 +342,7 @@ func (s *session) decryptEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node,
 		return nil, nil, errors.New("enc without payload")
 	}
 	addr := signalAddress(from)
-	hh := sha256.New()
-	hh.Write(ct)
-	hh.Write([]byte{0})
-	hh.Write([]byte(encType))
-	hh.Write([]byte{0})
-	hh.Write([]byte(addr))
-	hash := hh.Sum(nil)
+	hash := eventHash(ct, encType, addr)
 
 	c := s.c
 	unlock := c.locks.lock(addr)
@@ -334,13 +352,12 @@ func (s *session) decryptEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node,
 	var identityChanged bool
 	err := c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
 		buf, err := tx.GetBufferedEvent(s.ctx, c.cfg.InstanceID, hash)
-		if err != nil {
+		switch {
+		case err != nil:
 			return err
-		}
-		if buf != nil {
-			if buf.Plaintext == nil {
-				return errAlreadyHandled
-			}
+		case buf != nil && buf.Plaintext == nil:
+			return errAlreadyHandled
+		case buf != nil:
 			padded = buf.Plaintext
 			return nil
 		}
@@ -349,37 +366,10 @@ func (s *session) decryptEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node,
 			return err
 		}
 		var remoteIdentity [32]byte
-		switch encType {
-		case "pkmsg":
-			res, err := rec.DecryptPreKeyMessage(
-				signal.LocalIdentity{Key: &s.dev.IdentityKey.KeyPair, RegistrationID: s.dev.RegistrationID},
-				store.PreKeyStore{S: tx, Ctx: s.ctx, Device: s.dev}, ct)
-			if err != nil {
-				return err
-			}
-			padded, remoteIdentity = res.Plaintext, res.RemoteIdentity
-			if res.UsedPreKeyID != nil {
-				if err := tx.RemovePreKey(s.ctx, c.cfg.InstanceID, *res.UsedPreKeyID); err != nil {
-					return err
-				}
-			}
-		default:
-			if padded, err = rec.DecryptMessage(ct); err != nil {
-				return err
-			}
-			remoteIdentity, _ = rec.RemoteIdentity()
-		}
-		// Trust on first use, auto-accepting changes like WhatsApp clients
-		// do (users reinstall often); a change is reported as an event.
-		prev, err := tx.GetIdentity(s.ctx, c.cfg.InstanceID, addr)
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-		case err != nil:
+		if padded, remoteIdentity, err = s.decryptSession(tx, rec, encType, ct); err != nil {
 			return err
-		case prev != remoteIdentity:
-			identityChanged = true
 		}
-		if err := tx.PutIdentity(s.ctx, c.cfg.InstanceID, addr, remoteIdentity); err != nil {
+		if identityChanged, err = trackIdentity(s.ctx, tx, c.cfg.InstanceID, addr, remoteIdentity); err != nil {
 			return err
 		}
 		if err := tx.PutSession(s.ctx, c.cfg.InstanceID, addr, rec); err != nil {
@@ -402,6 +392,54 @@ func (s *session) decryptEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node,
 		return nil, nil, err
 	}
 	return pt, hash, nil
+}
+
+// eventHash identifies an encrypted payload from one sender, for the
+// decrypted-event buffer.
+func eventHash(ct []byte, encType, addr string) []byte {
+	h := sha256.New()
+	for _, p := range [][]byte{ct, {0}, []byte(encType), {0}, []byte(addr)} {
+		h.Write(p)
+	}
+	return h.Sum(nil)
+}
+
+// decryptSession decrypts a pkmsg or msg with rec, consuming the one-time
+// prekey a pkmsg used. It returns the padded plaintext and the sender's
+// identity key.
+func (s *session) decryptSession(tx *store.Store, rec *signal.Record, encType string, ct []byte) ([]byte, [32]byte, error) {
+	if encType != "pkmsg" {
+		padded, err := rec.DecryptMessage(ct)
+		if err != nil {
+			return nil, [32]byte{}, err
+		}
+		id, _ := rec.RemoteIdentity()
+		return padded, id, nil
+	}
+	res, err := rec.DecryptPreKeyMessage(
+		signal.LocalIdentity{Key: &s.dev.IdentityKey.KeyPair, RegistrationID: s.dev.RegistrationID},
+		store.PreKeyStore{S: tx, Ctx: s.ctx, Device: s.dev}, ct)
+	if err != nil {
+		return nil, [32]byte{}, err
+	}
+	if res.UsedPreKeyID != nil {
+		if err := tx.RemovePreKey(s.ctx, s.c.cfg.InstanceID, *res.UsedPreKeyID); err != nil {
+			return nil, [32]byte{}, err
+		}
+	}
+	return res.Plaintext, res.RemoteIdentity, nil
+}
+
+// trackIdentity stores a peer's identity key and reports whether it
+// changed. Changes are accepted (trust on first use, like WhatsApp
+// clients, since users reinstall often) and surfaced as an event.
+func trackIdentity(ctx context.Context, tx *store.Store, inst, addr string, identity [32]byte) (bool, error) {
+	prev, err := tx.GetIdentity(ctx, inst, addr)
+	changed := err == nil && prev != identity
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return false, err
+	}
+	return changed, tx.PutIdentity(ctx, inst, addr, identity)
 }
 
 func (s *session) markHandled(hash []byte) {
@@ -479,12 +517,7 @@ func unwrapMessage(m *wae2e.Message) *wae2e.Message {
 
 // sendMessageReceipt confirms delivery. It also acts as the stanza ack.
 func (s *session) sendMessageReceipt(n *wabin.Node, info *MessageInfo) {
-	attrs := wabin.Attrs{"id": info.ID, "to": n.Attrs["from"]}
-	for _, k := range []string{"recipient", "participant"} {
-		if v, ok := n.Attrs[k]; ok {
-			attrs[k] = v
-		}
-	}
+	attrs := wabin.Attrs{"id": info.ID, "to": n.Attrs["from"]}.CopyFrom(n.Attrs, "recipient", "participant")
 	if info.IsFromMe {
 		attrs["type"] = "sender"
 		if info.Type == "peer_msg" {
@@ -497,19 +530,3 @@ func (s *session) sendMessageReceipt(n *wabin.Node, info *MessageInfo) {
 	}
 	s.sendOrLog(wabin.Node{Tag: "receipt", Attrs: attrs})
 }
-
-func (s *session) sendAckCode(n *wabin.Node, code int) {
-	if s.replaying {
-		return
-	}
-	attrs := wabin.Attrs{"class": n.Tag, "id": n.Attrs["id"], "to": n.Attrs["from"], "error": code}
-	for _, k := range []string{"participant", "recipient"} {
-		if v, ok := n.Attrs[k]; ok {
-			attrs[k] = v
-		}
-	}
-	s.sendOrLog(wabin.Node{Tag: "ack", Attrs: attrs})
-}
-
-// sendAck is ack(n) under the name used by the message code.
-func (s *session) sendAck(n *wabin.Node) { s.ack(n) }

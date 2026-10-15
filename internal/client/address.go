@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // signalAddressName is the Signal "name" of a JID's user: the user part,

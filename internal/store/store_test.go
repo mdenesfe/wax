@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 func TestSealer(t *testing.T) {
@@ -113,8 +113,8 @@ func TestDeviceLifecycle(t *testing.T) {
 	}
 
 	// Pairing.
-	got.JID = binary.JID{User: "905550000000", Device: 7, Server: binary.ServerUser}
-	got.LID = binary.JID{User: "123456789", Device: 7, Server: binary.ServerLID}
+	got.JID = wabin.JID{User: "905550000000", Device: 7, Server: wabin.ServerUser}
+	got.LID = wabin.JID{User: "123456789", Device: 7, Server: wabin.ServerLID}
 	got.Account = []byte{1, 2, 3}
 	got.Platform = "android"
 	got.PairedAt = time.Now().Truncate(time.Second)

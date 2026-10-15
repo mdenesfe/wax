@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/media"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // mediaState caches the media server credentials.
@@ -158,17 +159,41 @@ func (c *Client) DownloadMedia(ctx context.Context, directPath string, mediaKey,
 	return media.Decrypt(blob, mediaKey, typ, fileEncSHA256, fileSHA256)
 }
 
-// MediaKind selects which message type SendMedia builds.
-type MediaKind int
+// MediaKind selects which message type SendMedia builds. Its values are
+// the names used by the REST API.
+type MediaKind string
 
 // Media kinds.
 const (
-	KindImage MediaKind = iota
-	KindVideo
-	KindAudio
-	KindVoiceNote
-	KindDocument
+	KindImage     MediaKind = "image"
+	KindVideo     MediaKind = "video"
+	KindAudio     MediaKind = "audio"
+	KindVoiceNote MediaKind = "voice"
+	KindDocument  MediaKind = "document"
 )
+
+var mediaTypes = map[MediaKind]media.Type{KindImage: media.Image, KindVideo: media.Video, KindAudio: media.Audio,
+	KindVoiceNote: media.Audio, KindDocument: media.Document}
+
+// Valid reports whether k is a known media kind.
+func (k MediaKind) Valid() bool {
+	_, ok := mediaTypes[k]
+	return ok
+}
+
+// KindForMIME picks the media kind for a MIME type; anything that is not
+// an image, video or audio is sent as a document.
+func KindForMIME(mime string) MediaKind {
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		return KindImage
+	case strings.HasPrefix(mime, "video/"):
+		return KindVideo
+	case strings.HasPrefix(mime, "audio/"):
+		return KindAudio
+	}
+	return KindDocument
+}
 
 // SendMediaRequest describes a media message to send.
 type SendMediaRequest struct {
@@ -177,14 +202,14 @@ type SendMediaRequest struct {
 	MimeType string
 	Caption  string // image, video, document
 	FileName string // document
+	ID       string // message id ("" = generate)
 }
 
 // SendMedia uploads a file and sends it as a media message.
 func (c *Client) SendMedia(ctx context.Context, to wabin.JID, req SendMediaRequest) (*SendResult, error) {
-	typ := map[MediaKind]media.Type{KindImage: media.Image, KindVideo: media.Video, KindAudio: media.Audio,
-		KindVoiceNote: media.Audio, KindDocument: media.Document}[req.Kind]
-	if typ == "" {
-		return nil, fmt.Errorf("client: unknown media kind %d", req.Kind)
+	typ, ok := mediaTypes[req.Kind]
+	if !ok {
+		return nil, fmt.Errorf("client: unknown media kind %q", req.Kind)
 	}
 	up, err := c.Upload(ctx, req.Data, typ)
 	if err != nil {
@@ -215,7 +240,7 @@ func (c *Client) SendMedia(ctx context.Context, to wabin.JID, req SendMediaReque
 			Mimetype: proto.String(req.MimeType), FileName: proto.String(name), Title: proto.String(name),
 			Caption: optString(req.Caption), MediaKeyTimestamp: ts}
 	}
-	return c.SendMessage(ctx, to, msg)
+	return c.SendMessageWithID(ctx, to, msg, req.ID)
 }
 
 func optString(s string) *string {

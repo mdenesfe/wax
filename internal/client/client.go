@@ -14,6 +14,8 @@ import (
 
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/transport"
+	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/internal/waversion"
 )
 
 // Errors that end Run. Everything else is retried internally.
@@ -48,6 +50,11 @@ type Config struct {
 	KeepAliveMin, KeepAliveMax time.Duration // ping interval range (20-30 s)
 	KeepAliveTimeout           time.Duration // response deadline (10 s)
 	KeepAliveMaxFailure        time.Duration // reconnect after this long without a pong (90 s)
+
+	// Version, if set, is consulted on every connection attempt instead of
+	// Device.Version, so a newer WhatsApp Web version applies on the next
+	// reconnect without restarting the instance.
+	Version func() waversion.Version
 
 	// PushName is our display name, required to announce presence. It is
 	// learned from app state sync in a later phase; set it here meanwhile.
@@ -222,14 +229,20 @@ func (c *Client) loadOrCreateDevice(ctx context.Context) (*store.Device, error) 
 // payloadFor returns the login payload for a paired device and the
 // registration payload otherwise.
 func (c *Client) payloadFor(dev *store.Device) ([]byte, error) {
+	dc := c.cfg.Device
+	if c.cfg.Version != nil {
+		if v := c.cfg.Version(); !v.IsZero() {
+			dc.Version = v
+		}
+	}
 	if dev.IsPaired() {
 		user, err := strconv.ParseUint(dev.JID.User, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("client: stored JID %s is not numeric: %w", dev.JID, err)
 		}
-		return LoginPayload(c.cfg.Device, user, uint32(dev.JID.Device))
+		return LoginPayload(dc, user, uint32(dev.JID.Device))
 	}
-	return RegistrationPayload(c.cfg.Device, RegistrationKeys{
+	return RegistrationPayload(dc, RegistrationKeys{
 		RegistrationID:  dev.RegistrationID,
 		IdentityKey:     dev.IdentityKey.Pub,
 		SignedPreKeyID:  dev.SignedPreKey.ID,
@@ -247,4 +260,40 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	case <-t.C:
 		return true
 	}
+}
+
+// IsLoggedIn reports whether the client is connected, logged in and ready.
+func (c *Client) IsLoggedIn() bool {
+	_, err := c.activeSession()
+	return err == nil
+}
+
+// OwnJID returns our device JID and LID while logged in.
+func (c *Client) OwnJID() (jid, lid wabin.JID, ok bool) {
+	s, err := c.activeSession()
+	if err != nil {
+		return wabin.JID{}, wabin.JID{}, false
+	}
+	return s.dev.JID, s.dev.LID, true
+}
+
+// Logout unlinks this device from the account. The server then ends the
+// stream with "device removed", Run deletes the stored session and returns
+// ErrLoggedOut.
+func (c *Client) Logout(ctx context.Context) error {
+	s, err := c.activeSession()
+	if err != nil {
+		return err
+	}
+	_, err = s.sendIQ(ctx, wabin.Node{
+		Tag:   "iq",
+		Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "set", "xmlns": "md"},
+		Content: []wabin.Node{{Tag: "remove-companion-device", Attrs: wabin.Attrs{
+			"jid": s.dev.JID, "reason": "user_initiated",
+		}}},
+	}, 0)
+	if err != nil {
+		return fmt.Errorf("logout: %w", err)
+	}
+	return nil
 }

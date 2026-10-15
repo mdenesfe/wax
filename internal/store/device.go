@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // SignedPreKey is the medium-term prekey signed by the identity key.
@@ -31,8 +31,8 @@ type Device struct {
 	AdvSecret      [32]byte
 
 	// Set by pairing. JID is the empty JID while the device is unpaired.
-	JID          binary.JID
-	LID          binary.JID
+	JID          wabin.JID
+	LID          wabin.JID
 	Account      []byte // serialized waadv.ADVSignedDeviceIdentity
 	Platform     string
 	BusinessName string
@@ -116,7 +116,7 @@ func (s *Store) SavePairing(ctx context.Context, d *Device) error {
 }
 
 // UpdateLID stores the device's LID (learned from the success node).
-func (s *Store) UpdateLID(ctx context.Context, instanceID string, lid binary.JID) error {
+func (s *Store) UpdateLID(ctx context.Context, instanceID string, lid wabin.JID) error {
 	_, err := s.db.Exec(ctx, `UPDATE wax_devices SET lid = $2, updated_at = now() WHERE instance_id = $1`,
 		instanceID, nullableJID(lid))
 	if err != nil {
@@ -205,19 +205,19 @@ func (s *Store) LoadDevice(ctx context.Context, instanceID string) (*Device, err
 		d.PairedAt = *pairedAt
 	}
 	if jid != nil {
-		if d.JID, err = binary.ParseJID(*jid); err != nil {
+		if d.JID, err = wabin.ParseJID(*jid); err != nil {
 			return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
 		}
 	}
 	if lid != nil {
-		if d.LID, err = binary.ParseJID(*lid); err != nil {
+		if d.LID, err = wabin.ParseJID(*lid); err != nil {
 			return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
 		}
 	}
 	return d, nil
 }
 
-func nullableJID(j binary.JID) *string {
+func nullableJID(j wabin.JID) *string {
 	if j.IsEmpty() {
 		return nil
 	}

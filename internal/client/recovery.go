@@ -37,14 +37,14 @@ func (c *Client) requestRecovery(ctx context.Context, s *session, collection str
 			},
 		},
 	}}
-	s.log.Warn("requesting app state recovery from the phone", "collection", collection)
+	s.log.Info("requesting app state recovery from the phone", "collection", collection)
 	if err := c.sendPeerMessage(ctx, s, msg); err != nil {
 		s.log.Warn("app state recovery request failed", "collection", collection, "error", err)
 	}
 }
 
 func (a *appStateSync) shouldRequestRecovery(collection string) bool {
-	return a.shouldRequest("recovery:" + collection)
+	return a.shouldRequest("recovery:"+collection, recoveryInterval)
 }
 
 // handlePeerDataResponse processes our phone's answer to a peer data
@@ -92,12 +92,14 @@ func (c *Client) applyRecovery(ctx context.Context, s *session, rec *wasyncactio
 	}
 	c.appState.mu.Lock()
 	defer c.appState.mu.Unlock()
-	cur, _, err := c.cfg.Store.AppStateVersion(ctx, c.cfg.InstanceID, collection)
+	cur, err := c.cfg.Store.AppStateVersion(ctx, c.cfg.InstanceID, collection)
 	if err != nil {
 		return err
 	}
-	if cur >= rec.GetVersion().GetVersion() && cur != 0 {
-		s.log.Info("ignoring stale app state recovery", "collection", collection, "have", cur, "got", rec.GetVersion().GetVersion())
+	// The phone's copy replaces an unverified state of the same version.
+	got := rec.GetVersion().GetVersion()
+	if cur.Version != 0 && (cur.Version > got || cur.Version == got && !cur.Unverified) {
+		s.log.Info("ignoring stale app state recovery", "collection", collection, "have", cur.Version, "got", got)
 		return nil
 	}
 	var res *appstate.Result
@@ -120,7 +122,7 @@ func (c *Client) applyRecovery(ctx context.Context, s *session, rec *wasyncactio
 				return err
 			}
 		}
-		return tx.PutAppStateVersion(ctx, c.cfg.InstanceID, collection, res.State.Version, res.State.Hash)
+		return tx.PutAppStateVersion(ctx, c.cfg.InstanceID, collection, res.State)
 	})
 	if errors.Is(err, appstate.ErrKeyNotFound) {
 		return nil // keys arrive separately; the recovery can be requested again

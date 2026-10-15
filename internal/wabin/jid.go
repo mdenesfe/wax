@@ -1,4 +1,4 @@
-package binary
+package wabin
 
 import (
 	"fmt"
@@ -81,6 +81,46 @@ func (j JID) String() string {
 	b.WriteByte('@')
 	b.WriteString(j.Server)
 	return b.String()
+}
+
+// MarshalText encodes the JID in its textual form (JSON: a string; the
+// empty JID becomes "").
+func (j JID) MarshalText() ([]byte, error) {
+	if j.IsEmpty() {
+		return nil, nil
+	}
+	return []byte(j.String()), nil
+}
+
+// UnmarshalText parses the textual form.
+func (j *JID) UnmarshalText(b []byte) error {
+	if len(b) == 0 {
+		*j = JID{}
+		return nil
+	}
+	v, err := ParseJID(string(b))
+	if err != nil {
+		return err
+	}
+	*j = v
+	return nil
+}
+
+// ParseRecipient parses user input naming a chat: phone digits (an optional
+// leading "+" is ignored) or a full JID without a device part.
+func ParseRecipient(s string) (JID, error) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "+")
+	if strings.Contains(s, "@") {
+		j, err := ParseJID(s)
+		if err != nil || j.User == "" || j.Device != 0 {
+			return JID{}, fmt.Errorf("%w: recipient %q", ErrInvalidJID, s)
+		}
+		return j, nil
+	}
+	if s == "" || strings.Trim(s, "0123456789") != "" {
+		return JID{}, fmt.Errorf("%w: recipient must be a phone number or JID", ErrInvalidJID)
+	}
+	return JID{User: s, Server: ServerUser}, nil
 }
 
 // ParseJID parses the textual form produced by JID.String.

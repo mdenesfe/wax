@@ -11,11 +11,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/media"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/proto/wahistorysync"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 const (
@@ -70,61 +70,81 @@ func (s *session) historyWorker() {
 	}
 }
 
+// processNextHistory downloads, decodes and stores the oldest queued
+// chunk. It reports whether a job was found.
 func (s *session) processNextHistory() (bool, error) {
 	c := s.c
 	job, err := c.cfg.Store.NextHistoryJob(s.ctx, c.cfg.InstanceID, maxHistoryAttempts)
 	if err != nil || job == nil {
 		return false, err
 	}
-	fail := func(err error) (bool, error) {
-		_ = c.cfg.Store.FailHistoryJob(context.WithoutCancel(s.ctx), job.ID, err.Error())
-		return true, err
-	}
 	var n wae2e.HistorySyncNotification
 	if err := proto.Unmarshal(job.Notification, &n); err != nil {
 		_ = c.cfg.Store.DeleteHistoryJob(s.ctx, job.ID)
 		return true, fmt.Errorf("drop invalid history notification: %w", err)
 	}
+	hs, err := s.loadHistory(&n)
+	if err == nil {
+		var ev HistorySync
+		ev, err = s.storeHistory(job.ID, hs)
+		if err == nil {
+			s.log.Info("history sync chunk stored", "type", ev.Type, "chunk", ev.Chunk, "progress", ev.Progress,
+				"conversations", ev.Conversations, "messages", ev.Messages, "push_names", ev.PushNames)
+			c.emit(ev)
+			return true, nil
+		}
+	}
+	_ = c.cfg.Store.FailHistoryJob(context.WithoutCancel(s.ctx), job.ID, err.Error())
+	return true, err
+}
+
+// loadHistory fetches (inline or from the media server), inflates and
+// decodes one history chunk.
+func (s *session) loadHistory(n *wae2e.HistorySyncNotification) (*wahistorysync.HistorySync, error) {
 	compressed := n.GetInitialHistBootstrapInlinePayload()
 	if compressed == nil {
-		compressed, err = c.DownloadMedia(s.ctx, n.GetDirectPath(), n.GetMediaKey(), n.GetFileEncSHA256(), n.GetFileSHA256(), media.History)
+		var err error
+		compressed, err = s.c.DownloadMedia(s.ctx, n.GetDirectPath(), n.GetMediaKey(), n.GetFileEncSHA256(), n.GetFileSHA256(), media.History)
 		if err != nil {
-			return fail(fmt.Errorf("download: %w", err))
+			return nil, fmt.Errorf("download: %w", err)
 		}
 	}
 	zr, err := zlib.NewReader(bytes.NewReader(compressed))
 	if err != nil {
-		return fail(fmt.Errorf("zlib: %w", err))
+		return nil, fmt.Errorf("zlib: %w", err)
 	}
+	defer zr.Close()
 	raw, err := io.ReadAll(io.LimitReader(zr, maxHistorySize+1))
-	zr.Close()
 	if err != nil {
-		return fail(fmt.Errorf("inflate: %w", err))
+		return nil, fmt.Errorf("inflate: %w", err)
 	}
 	if len(raw) > maxHistorySize {
-		return fail(errors.New("history chunk too large"))
+		return nil, errors.New("history chunk too large")
 	}
 	var hs wahistorysync.HistorySync
 	if err := proto.Unmarshal(raw, &hs); err != nil {
-		return fail(fmt.Errorf("decode: %w", err))
+		return nil, fmt.Errorf("decode: %w", err)
 	}
+	return &hs, nil
+}
+
+// storeHistory persists a decoded chunk and deletes its job in one
+// transaction, so a crash never stores a chunk twice or loses it.
+func (s *session) storeHistory(jobID int64, hs *wahistorysync.HistorySync) (HistorySync, error) {
 	ev := HistorySync{Type: hs.GetSyncType().String(), Chunk: hs.GetChunkOrder(), Progress: hs.GetProgress(), PushNames: len(hs.GetPushnames())}
-	err = c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
-		inst := c.cfg.InstanceID
+	inst := s.c.cfg.InstanceID
+	err := s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
 		for _, m := range hs.GetPhoneNumberToLidMappings() {
-			pn, e1 := wabin.ParseJID(m.GetPnJID())
-			lid, e2 := wabin.ParseJID(m.GetLidJID())
-			if e1 == nil && e2 == nil && pn.User != "" && lid.User != "" {
-				if _, err := tx.PutLIDMapping(s.ctx, inst, pn.User, lid.User); err != nil {
-					return err
-				}
+			if err := storeLIDMapping(s.ctx, tx, inst, m.GetPnJID(), m.GetLidJID()); err != nil {
+				return err
 			}
 		}
 		for _, p := range hs.GetPushnames() {
-			if p.GetID() != "" && p.GetPushname() != "" {
-				if err := tx.PutPushName(s.ctx, inst, p.GetID(), p.GetPushname()); err != nil {
-					return err
-				}
+			if p.GetID() == "" || p.GetPushname() == "" {
+				continue
+			}
+			if err := tx.PutPushName(s.ctx, inst, p.GetID(), p.GetPushname()); err != nil {
+				return err
 			}
 		}
 		if len(hs.GetNctSalt()) > 0 {
@@ -133,74 +153,87 @@ func (s *session) processNextHistory() (bool, error) {
 			}
 		}
 		for _, conv := range hs.GetConversations() {
-			chat := conv.GetID()
-			if chat == "" {
+			if conv.GetID() == "" {
 				continue
 			}
-			ev.Conversations++
-			u := store.ChatUpdate{}
-			if name := firstNonEmpty(conv.GetName(), conv.GetDisplayName()); name != "" {
-				u.Name = &name
-			}
-			if ts := conv.GetConversationTimestamp(); ts > 0 {
-				t := time.Unix(int64(ts), 0)
-				u.LastMessageAt = &t
-			}
-			unread := int(conv.GetUnreadCount())
-			u.UnreadCount = &unread
-			archived, pinned := conv.GetArchived(), conv.GetPinned() > 0
-			u.Archived, u.Pinned = &archived, &pinned
-			if end := conv.GetMuteEndTime(); end > 0 {
-				t := time.Unix(int64(end), 0)
-				u.MutedUntil = &t
-			}
-			if err := tx.UpdateChat(s.ctx, inst, chat, u); err != nil {
+			n, err := s.storeConversation(tx, conv)
+			if err != nil {
 				return err
 			}
-			for _, hm := range conv.GetMessages() {
-				wmi := hm.GetMessage()
-				key := wmi.GetKey()
-				if key.GetID() == "" {
-					continue
-				}
-				var content []byte
-				if wmi.GetMessage() != nil {
-					if content, err = proto.Marshal(wmi.GetMessage()); err != nil {
-						return err
-					}
-				}
-				sender := key.GetParticipant()
-				if sender == "" {
-					sender = wmi.GetParticipant()
-				}
-				if sender == "" && !key.GetFromMe() {
-					sender = chat
-				}
-				typ := "text"
-				if wmi.GetMessage() == nil {
-					typ = fmt.Sprintf("stub:%d", wmi.GetMessageStubType())
-				} else if mt := mediaType(wmi.GetMessage()); mt != "" {
-					typ = mt
-				}
-				if err := tx.PutMessage(s.ctx, inst, &store.StoredMessage{
-					Chat: chat, ID: key.GetID(), Sender: sender, FromMe: key.GetFromMe(),
-					SentAt: time.Unix(int64(wmi.GetMessageTimestamp()), 0), PushName: wmi.GetPushName(),
-					Type: typ, Content: content, Source: "history",
-				}); err != nil {
-					return err
-				}
-				ev.Messages++
-			}
+			ev.Conversations++
+			ev.Messages += n
 		}
-		return tx.DeleteHistoryJob(s.ctx, job.ID)
+		return tx.DeleteHistoryJob(s.ctx, jobID)
 	})
 	if err != nil {
-		return fail(fmt.Errorf("store: %w", err))
+		return ev, fmt.Errorf("store: %w", err)
 	}
-	s.log.Info("history sync chunk stored", "type", ev.Type, "chunk", ev.Chunk, "progress", ev.Progress,
-		"conversations", ev.Conversations, "messages", ev.Messages, "push_names", ev.PushNames)
-	c.emit(ev)
-	return true, nil
+	return ev, nil
+}
+
+// storeConversation stores a conversation's chat metadata and messages and
+// returns the number of messages stored.
+func (s *session) storeConversation(tx *store.Store, conv *wahistorysync.Conversation) (int, error) {
+	inst, chat := s.c.cfg.InstanceID, conv.GetID()
+	unread := int(conv.GetUnreadCount())
+	archived, pinned := conv.GetArchived(), conv.GetPinned() > 0
+	u := store.ChatUpdate{UnreadCount: &unread, Archived: &archived, Pinned: &pinned,
+		LastMessageAt: unixPtr(conv.GetConversationTimestamp()), MutedUntil: unixPtr(conv.GetMuteEndTime())}
+	if name := firstNonEmpty(conv.GetName(), conv.GetDisplayName()); name != "" {
+		u.Name = &name
+	}
+	if err := tx.UpdateChat(s.ctx, inst, chat, u); err != nil {
+		return 0, err
+	}
+	stored := 0
+	for _, hm := range conv.GetMessages() {
+		m, err := historyMessage(chat, hm.GetMessage())
+		if err != nil {
+			return stored, err
+		}
+		if m == nil {
+			continue
+		}
+		if err := tx.PutMessage(s.ctx, inst, m); err != nil {
+			return stored, err
+		}
+		stored++
+	}
+	return stored, nil
+}
+
+// historyMessage converts a history message for storage; nil means skip.
+func historyMessage(chat string, wmi *wahistorysync.WebMessageInfo) (*store.StoredMessage, error) {
+	key := wmi.GetKey()
+	if key.GetID() == "" {
+		return nil, nil
+	}
+	m := &store.StoredMessage{
+		Chat: chat, ID: key.GetID(), Sender: firstNonEmpty(key.GetParticipant(), wmi.GetParticipant()), FromMe: key.GetFromMe(),
+		SentAt: time.Unix(int64(wmi.GetMessageTimestamp()), 0), PushName: wmi.GetPushName(), Type: "text", Source: "history",
+	}
+	if m.Sender == "" && !m.FromMe {
+		m.Sender = chat
+	}
+	if wmi.GetMessage() == nil {
+		m.Type = fmt.Sprintf("stub:%d", wmi.GetMessageStubType())
+		return m, nil
+	}
+	if mt := mediaType(wmi.GetMessage()); mt != "" {
+		m.Type = mt
+	}
+	var err error
+	m.Content, err = proto.Marshal(wmi.GetMessage())
+	return m, err
+}
+
+// unixPtr converts a non-zero Unix timestamp to a *time.Time.
+func unixPtr(ts uint64) *time.Time {
+	if ts == 0 {
+		return nil
+	}
+	t := time.Unix(int64(ts), 0)
+	return &t
 }
 
 func firstNonEmpty(v ...string) string {

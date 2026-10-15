@@ -15,13 +15,14 @@
 package appstate
 
 import (
-	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/binary"
 	"errors"
 	"hash"
+
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 )
 
 // Collection names.
@@ -57,10 +58,7 @@ const (
 // little-endian uint16 words with wrap-around.
 func lthashOp(state *[lthashSize]byte, items [][]byte, subtract bool) {
 	for _, item := range items {
-		exp, err := hkdf.Key(sha256.New, item, nil, lthashInfo, lthashSize)
-		if err != nil {
-			panic(err) // constant parameters; cannot fail
-		}
+		exp := cryptoutil.HKDF(item, nil, lthashInfo, lthashSize)
 		for i := 0; i < lthashSize; i += 2 {
 			x := binary.LittleEndian.Uint16(state[i:])
 			y := binary.LittleEndian.Uint16(exp[i:])
@@ -75,9 +73,19 @@ func lthashOp(state *[lthashSize]byte, items [][]byte, subtract bool) {
 }
 
 // HashState is a collection's version and LTHash.
+//
+// Unverified marks a state built from a snapshot whose LTHash did not
+// match the server's snapshot MAC although every record verified
+// individually. This happens for some collections of real accounts: even
+// the LTHash the phone itself reports in a recovery can differ from the
+// sum of the records it sends, so the hash evidently covers records that
+// are never delivered to companions. On an unverified state patches are
+// still authenticated record by record and by their patch MAC; only the
+// LTHash comparison is skipped until the phone sends a recovery.
 type HashState struct {
-	Version uint64
-	Hash    [lthashSize]byte
+	Version    uint64
+	Hash       [lthashSize]byte
+	Unverified bool
 }
 
 // SubtractThenAdd updates the hash: removed value MACs out, added ones in.
@@ -95,10 +103,7 @@ type Keys struct {
 
 // ExpandKeys derives the five keys from an app state sync key.
 func ExpandKeys(keyData []byte) Keys {
-	out, err := hkdf.Key(sha256.New, keyData, nil, "WhatsApp Mutation Keys", 160)
-	if err != nil {
-		panic(err)
-	}
+	out := cryptoutil.HKDF(keyData, nil, "WhatsApp Mutation Keys", 160)
 	return Keys{out[0:32], out[32:64], out[64:96], out[96:128], out[128:160]}
 }
 

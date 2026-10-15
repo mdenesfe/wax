@@ -11,12 +11,13 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/appstate"
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/media"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/proto/waserversync"
+	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // errMissingKeys means app state could not be decoded until the phone
@@ -30,15 +31,19 @@ type appStateSync struct {
 	requested map[string]time.Time // key id -> when we asked the phone
 }
 
-// shouldRequest reports whether a key may be requested now (at most once a
-// minute per key, so a slow phone is not flooded).
-func (a *appStateSync) shouldRequest(id string) bool {
+// keyRequestInterval limits app state key requests per key, so a slow
+// phone is not flooded.
+const keyRequestInterval = time.Minute
+
+// shouldRequest reports whether request id may be sent now: at most once
+// per interval.
+func (a *appStateSync) shouldRequest(id string, interval time.Duration) bool {
 	a.reqMu.Lock()
 	defer a.reqMu.Unlock()
 	if a.requested == nil {
 		a.requested = map[string]time.Time{}
 	}
-	if t, ok := a.requested[id]; ok && time.Since(t) < time.Minute {
+	if t, ok := a.requested[id]; ok && time.Since(t) < interval {
 		return false
 	}
 	a.requested[id] = time.Now()
@@ -98,7 +103,7 @@ func (c *Client) syncAppState(ctx context.Context, s *session, collection string
 			return rerr
 		}
 		err = c.syncAppStateLocked(ctx, s, collection, true)
-		if errors.Is(err, appstate.ErrSnapshotMAC) || errors.Is(err, appstate.ErrPatchMAC) {
+		if errors.Is(err, appstate.ErrPatchMAC) {
 			// The server's copy itself does not verify; only the phone can help.
 			c.requestRecovery(ctx, s, collection)
 		}
@@ -109,15 +114,25 @@ func (c *Client) syncAppState(ctx context.Context, s *session, collection string
 	return err
 }
 
+// onUnverified handles a snapshot whose LTHash does not verify although
+// every record did (see appstate.HashState): the data is used, the
+// application is told once, and the phone is asked for its authoritative
+// copy (rate limited).
+func (c *Client) onUnverified(ctx context.Context, s *session, collection string, version uint64) {
+	s.log.Info("app state collection unverifiable from the server snapshot; records verified individually",
+		"collection", collection, "version", version)
+	c.emit(AppStateUnverified{Collection: collection, Version: version})
+	c.requestRecovery(ctx, s, collection)
+}
+
 func (c *Client) syncAppStateLocked(ctx context.Context, s *session, collection string, full bool) error {
-	version, hash, err := c.cfg.Store.AppStateVersion(ctx, c.cfg.InstanceID, collection)
+	state, err := c.cfg.Store.AppStateVersion(ctx, c.cfg.InstanceID, collection)
 	if err != nil {
 		return err
 	}
-	if version == 0 {
+	if state.Version == 0 {
 		full = true
 	}
-	state := appstate.HashState{Version: version, Hash: hash}
 	wantSnapshot := full
 	applied := 0
 	for {
@@ -132,6 +147,9 @@ func (c *Client) syncAppStateLocked(ctx context.Context, s *session, collection 
 				return c.maybeRequestKeys(ctx, s, missing, err)
 			}
 			applied += len(snapshot.GetRecords())
+			if state.Unverified {
+				c.onUnverified(ctx, s, collection, state.Version)
+			}
 		}
 		for _, p := range patches {
 			if state, err = c.applyAppState(ctx, s, collection, state, nil, p, full, missing); err != nil {
@@ -156,7 +174,7 @@ func (c *Client) maybeRequestKeys(ctx context.Context, s *session, missing map[s
 	}
 	var ids [][]byte
 	for k, id := range missing {
-		if c.appState.shouldRequest(k) {
+		if c.appState.shouldRequest(k, keyRequestInterval) {
 			ids = append(ids, id)
 		}
 	}
@@ -205,7 +223,7 @@ func (c *Client) applyAppState(ctx context.Context, s *session, collection strin
 				return err
 			}
 		}
-		return tx.PutAppStateVersion(ctx, c.cfg.InstanceID, collection, res.State.Version, res.State.Hash)
+		return tx.PutAppStateVersion(ctx, c.cfg.InstanceID, collection, res.State)
 	})
 	if err != nil {
 		return state, err
@@ -242,27 +260,12 @@ func (c *Client) applyMutation(ctx context.Context, s *session, tx *store.Store,
 		if err := tx.PutContactName(ctx, inst, jid, ca.GetFirstName(), ca.GetFullName()); err != nil {
 			return err
 		}
-		if pn, lid := ca.GetPnJID(), ca.GetLidJID(); pn != "" && lid != "" {
-			pj, e1 := wabin.ParseJID(pn)
-			lj, e2 := wabin.ParseJID(lid)
-			if e1 == nil && e2 == nil && pj.Server == wabin.ServerUser && lj.Server == wabin.ServerLID {
-				if _, err := tx.PutLIDMapping(ctx, inst, pj.User, lj.User); err != nil {
-					return err
-				}
-			}
-		}
+		return storeLIDMapping(ctx, tx, inst, ca.GetPnJID(), ca.GetLidJID())
 	case "lid_contact":
 		la := a.GetLidContactAction()
 		return tx.PutContactName(ctx, inst, jid, la.GetFirstName(), la.GetFullName())
 	case "mute":
-		var until time.Time
-		if ma := a.GetMuteAction(); ma.GetMuted() {
-			if end := ma.GetMuteEndTimestamp(); end < 0 {
-				until = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
-			} else {
-				until = time.UnixMilli(end)
-			}
-		}
+		until := muteUntil(a.GetMuteAction())
 		return tx.UpdateChat(ctx, inst, jid, store.ChatUpdate{MutedUntil: &until})
 	case "pin_v1":
 		pinned := a.GetPinAction().GetPinned()
@@ -277,14 +280,40 @@ func (c *Client) applyMutation(ctx context.Context, s *session, tx *store.Store,
 		}
 	case "setting_pushName":
 		name := a.GetPushNameSetting().GetName()
-		if name != "" {
-			if err := tx.UpdatePushName(ctx, inst, name); err != nil {
-				return err
-			}
-			c.pushName.Store(name)
+		if name == "" {
+			return nil
 		}
+		if err := tx.UpdatePushName(ctx, inst, name); err != nil {
+			return err
+		}
+		c.pushName.Store(name)
 	}
 	return nil
+}
+
+// muteUntil is the end of a mute; zero when unmuted, far future for
+// "always" (a negative end timestamp).
+func muteUntil(ma *wasyncaction.MuteAction) time.Time {
+	switch end := ma.GetMuteEndTimestamp(); {
+	case !ma.GetMuted():
+		return time.Time{}
+	case end < 0:
+		return time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+	default:
+		return time.UnixMilli(end)
+	}
+}
+
+// storeLIDMapping stores a phone number ↔ LID pair given as JID strings,
+// ignoring incomplete or mismatched pairs.
+func storeLIDMapping(ctx context.Context, tx *store.Store, inst, pnJID, lidJID string) error {
+	pn, e1 := wabin.ParseJID(pnJID)
+	lid, e2 := wabin.ParseJID(lidJID)
+	if e1 != nil || e2 != nil || pn.User == "" || lid.User == "" || pn.Server == wabin.ServerLID || lid.Server == wabin.ServerUser {
+		return nil
+	}
+	_, err := tx.PutLIDMapping(ctx, inst, pn.User, lid.User)
+	return err
 }
 
 // fetchAppStatePatches asks the server for a collection's snapshot and/or
@@ -316,43 +345,59 @@ func (s *session) fetchAppStatePatches(ctx context.Context, collection string, f
 	hasMore, _ := coll.AttrString("has_more_patches")
 	var ss *waserversync.SyncdSnapshot
 	if snapNode, ok := coll.Child("snapshot"); ok {
-		raw, _ := snapNode.Bytes()
-		var ref waserversync.ExternalBlobReference
-		if err := proto.Unmarshal(raw, &ref); err != nil {
-			return nil, nil, false, fmt.Errorf("snapshot reference: %w", err)
-		}
-		blob, err := s.c.downloadExternal(ctx, &ref)
-		if err != nil {
-			return nil, nil, false, fmt.Errorf("download %s snapshot: %w", collection, err)
-		}
 		ss = &waserversync.SyncdSnapshot{}
-		if err := proto.Unmarshal(blob, ss); err != nil {
-			return nil, nil, false, fmt.Errorf("snapshot: %w", err)
+		if err := s.downloadProto(ctx, snapNode, ss); err != nil {
+			return nil, nil, false, fmt.Errorf("%s snapshot: %w", collection, err)
 		}
 	}
+	pn, _ := coll.Child("patches")
 	var patches []*waserversync.SyncdPatch
-	if pn, ok := coll.Child("patches"); ok {
-		for _, p := range pn.ChildrenByTag("patch") {
-			raw, _ := p.Bytes()
-			var patch waserversync.SyncdPatch
-			if err := proto.Unmarshal(raw, &patch); err != nil {
-				return nil, nil, false, fmt.Errorf("patch: %w", err)
-			}
-			if ext := patch.GetExternalMutations(); ext != nil {
-				blob, err := s.c.downloadExternal(ctx, ext)
-				if err != nil {
-					return nil, nil, false, fmt.Errorf("download external mutations: %w", err)
-				}
-				var muts waserversync.SyncdMutations
-				if err := proto.Unmarshal(blob, &muts); err != nil {
-					return nil, nil, false, fmt.Errorf("external mutations: %w", err)
-				}
-				patch.Mutations = muts.GetMutations()
-			}
-			patches = append(patches, &patch)
+	for _, p := range pn.ChildrenByTag("patch") {
+		patch, err := s.readPatch(ctx, &p)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("%s patch: %w", collection, err)
 		}
+		patches = append(patches, patch)
 	}
 	return ss, patches, hasMore == "true", nil
+}
+
+// readPatch decodes a <patch>, downloading its mutations when they are
+// stored externally.
+func (s *session) readPatch(ctx context.Context, n *wabin.Node) (*waserversync.SyncdPatch, error) {
+	raw, _ := n.Bytes()
+	var patch waserversync.SyncdPatch
+	if err := proto.Unmarshal(raw, &patch); err != nil {
+		return nil, err
+	}
+	if ext := patch.GetExternalMutations(); ext != nil {
+		var muts waserversync.SyncdMutations
+		if err := s.downloadExternalProto(ctx, ext, &muts); err != nil {
+			return nil, fmt.Errorf("external mutations: %w", err)
+		}
+		patch.Mutations = muts.GetMutations()
+	}
+	return &patch, nil
+}
+
+// downloadProto decodes an ExternalBlobReference from n's content, then
+// downloads and decodes the referenced blob into out.
+func (s *session) downloadProto(ctx context.Context, n *wabin.Node, out proto.Message) error {
+	raw, _ := n.Bytes()
+	var ref waserversync.ExternalBlobReference
+	if err := proto.Unmarshal(raw, &ref); err != nil {
+		return fmt.Errorf("blob reference: %w", err)
+	}
+	return s.downloadExternalProto(ctx, &ref, out)
+}
+
+// downloadExternalProto downloads an external blob and decodes it into out.
+func (s *session) downloadExternalProto(ctx context.Context, ref *waserversync.ExternalBlobReference, out proto.Message) error {
+	blob, err := s.c.downloadExternal(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	return proto.Unmarshal(blob, out)
 }
 
 func (c *Client) downloadExternal(ctx context.Context, ref *waserversync.ExternalBlobReference) ([]byte, error) {

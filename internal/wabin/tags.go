@@ -1,7 +1,7 @@
 // Package binary implements WhatsApp's binary XML ("WABinary") node format:
 // the Node/JID model, token dictionaries, and the encoder/decoder used for
 // every stanza exchanged after the Noise handshake.
-package binary
+package wabin
 
 // Wire tags. Byte values 1..len(singleByteTokens)-1 are single-byte tokens;
 // the values below are structural markers.

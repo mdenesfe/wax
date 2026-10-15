@@ -4,33 +4,34 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // GroupParticipant is a member of a group.
 type GroupParticipant struct {
-	JID          wabin.JID // as addressed in the group (LID or phone number)
-	LID          wabin.JID
-	PhoneNumber  wabin.JID
-	IsAdmin      bool
-	IsSuperAdmin bool
+	JID          wabin.JID `json:"jid"` // as addressed in the group (LID or phone number)
+	LID          wabin.JID `json:"lid,omitzero"`
+	PhoneNumber  wabin.JID `json:"phone_number,omitzero"`
+	IsAdmin      bool      `json:"is_admin"`
+	IsSuperAdmin bool      `json:"is_super_admin"`
 }
 
 // GroupInfo is group metadata.
 type GroupInfo struct {
-	JID            wabin.JID
-	Name           string
-	Topic          string
-	AddressingMode string // "lid" or "pn"
-	Created        time.Time
-	Owner          wabin.JID
-	Announce       bool // only admins may send
-	Locked         bool // only admins may edit info
-	Participants   []GroupParticipant
+	JID            wabin.JID          `json:"jid"`
+	Name           string             `json:"name"`
+	Topic          string             `json:"topic,omitempty"`
+	AddressingMode string             `json:"addressing_mode"` // "lid" or "pn"
+	Created        time.Time          `json:"created"`
+	Owner          wabin.JID          `json:"owner,omitzero"`
+	Announce       bool               `json:"announce"` // only admins may send
+	Locked         bool               `json:"locked"`   // only admins may edit info
+	Participants   []GroupParticipant `json:"participants"`
 }
 
 // ErrGroupNotFound is returned for unknown groups or groups we are not in.
@@ -133,25 +134,11 @@ func parseGroup(n *wabin.Node) *GroupInfo {
 	for _, ch := range n.Children() {
 		switch ch.Tag {
 		case "participant":
-			p := GroupParticipant{}
-			p.JID, _ = ch.AttrJID("jid")
-			typ, _ := ch.AttrString("type")
-			p.IsAdmin = typ == "admin" || typ == "superadmin"
-			p.IsSuperAdmin = typ == "superadmin"
-			switch p.JID.Server {
-			case wabin.ServerLID:
-				p.LID = p.JID
-				p.PhoneNumber, _ = ch.AttrJID("phone_number")
-			case wabin.ServerUser:
-				p.PhoneNumber = p.JID
-				p.LID, _ = ch.AttrJID("lid")
-			}
-			gi.Participants = append(gi.Participants, p)
+			gi.Participants = append(gi.Participants, parseParticipant(&ch))
 		case "description":
-			if b, ok := ch.Child("body"); ok {
-				if raw, ok := b.Bytes(); ok {
-					gi.Topic = string(raw)
-				}
+			body, _ := ch.Child("body")
+			if raw, ok := body.Bytes(); ok {
+				gi.Topic = string(raw)
 			}
 		case "announcement":
 			gi.Announce = true
@@ -162,35 +149,55 @@ func parseGroup(n *wabin.Node) *GroupInfo {
 	return gi
 }
 
+// parseParticipant reads a <participant>; the alternate address (phone
+// number or LID) comes from an attribute.
+func parseParticipant(n *wabin.Node) GroupParticipant {
+	p := GroupParticipant{}
+	p.JID, _ = n.AttrJID("jid")
+	typ, _ := n.AttrString("type")
+	p.IsAdmin = typ == "admin" || typ == "superadmin"
+	p.IsSuperAdmin = typ == "superadmin"
+	switch p.JID.Server {
+	case wabin.ServerLID:
+		p.LID = p.JID
+		p.PhoneNumber, _ = n.AttrJID("phone_number")
+	case wabin.ServerUser:
+		p.PhoneNumber = p.JID
+		p.LID, _ = n.AttrJID("lid")
+	}
+	return p
+}
+
 // handleGroupNotification processes w:gp2 notifications (membership and
 // metadata changes).
 func (s *session) handleGroupNotification(n *wabin.Node) {
 	group, _ := n.AttrJID("from")
 	s.c.groups.invalidate(group)
 	var changes []string
-	rotate := false
 	for _, ch := range n.Children() {
 		changes = append(changes, ch.Tag)
-		if ch.Tag == "remove" || ch.Tag == "leave" {
-			rotate = true
-		}
 	}
-	if rotate {
-		// A member left: start a new sender key so they cannot read
-		// future messages, and redistribute it to everyone.
-		own := s.ownDeviceForGroups()
-		if err := s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
-			if err := tx.DeleteSenderKey(s.ctx, s.c.cfg.InstanceID, group.String(), signalAddress(own)); err != nil {
-				return err
-			}
-			return tx.ForgetSenderKeyRecipients(s.ctx, s.c.cfg.InstanceID, group.String(), "")
-		}); err != nil {
+	if slices.Contains(changes, "remove") || slices.Contains(changes, "leave") {
+		if err := s.rotateSenderKey(group); err != nil {
 			s.log.Warn("could not rotate sender key", "group", wabin.MaskJID(group), "error", err)
 			return // unacked: retried on redelivery
 		}
 	}
 	s.c.emit(GroupUpdate{JID: group, Changes: changes})
 	s.ack(n)
+}
+
+// rotateSenderKey drops our sender key for group after a member left, so
+// they cannot read future messages; the next send creates a new key and
+// distributes it to everyone.
+func (s *session) rotateSenderKey(group wabin.JID) error {
+	inst, gid := s.c.cfg.InstanceID, group.String()
+	return s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
+		if err := tx.DeleteSenderKey(s.ctx, inst, gid, signalAddress(s.ownDeviceForGroups())); err != nil {
+			return err
+		}
+		return tx.ForgetSenderKeyRecipients(s.ctx, inst, gid, "")
+	})
 }
 
 // ownDeviceForGroups is the device identity we use for sender keys: our LID

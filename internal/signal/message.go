@@ -2,12 +2,12 @@ package signal
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/signalwire"
 )
@@ -99,11 +99,7 @@ func parseSignalMessage(b []byte) (*signalMessage, error) {
 // macFor computes the truncated message MAC. The identities bind the
 // message to this pair of participants.
 func macFor(macKey [32]byte, senderIdentity, receiverIdentity [32]byte, data []byte) []byte {
-	m := hmac.New(sha256.New, macKey[:])
-	m.Write(encodeKey(senderIdentity))
-	m.Write(encodeKey(receiverIdentity))
-	m.Write(data)
-	return m.Sum(nil)[:macLength]
+	return cryptoutil.HMACSHA256(macKey[:], encodeKey(senderIdentity), encodeKey(receiverIdentity), data)[:macLength]
 }
 
 func (m *signalMessage) verifyMAC(senderIdentity, receiverIdentity [32]byte, macKey [32]byte) error {

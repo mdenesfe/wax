@@ -11,7 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/appstate"
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/media"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/proto/wahistorysync"
@@ -19,6 +18,7 @@ import (
 	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // syncServer plays WhatsApp's app state endpoints and our phone.
@@ -263,8 +263,8 @@ func TestAppStateAndHistorySync(t *testing.T) {
 			break
 		}
 	}
-	if v, _, err := h.store.AppStateVersion(h.ctx, h.inst, appstate.Regular); err != nil || v != 4 {
-		t.Fatalf("version %d %v", v, err)
+	if st, err := h.store.AppStateVersion(h.ctx, h.inst, appstate.Regular); err != nil || st.Version != 4 || st.Unverified {
+		t.Fatalf("state %+v %v", st, err)
 	}
 	if chat, _ := h.store.GetChat(h.ctx, h.inst, bobPN.String()); chat.MutedUntil != nil {
 		t.Fatalf("still muted until %v", chat.MutedUntil)
@@ -395,10 +395,10 @@ func TestAppStateFatalRecovery(t *testing.T) {
 			break
 		}
 	}
-	v, hash, err := h.store.AppStateVersion(h.ctx, h.inst, appstate.Regular)
+	st, err := h.store.AppStateVersion(h.ctx, h.inst, appstate.Regular)
 	must(t, err)
-	if v != 12 || hash != lthash.Hash {
-		t.Fatalf("recovered state v%d", v)
+	if st.Version != 12 || st.Hash != lthash.Hash || st.Unverified {
+		t.Fatalf("recovered state %+v", st)
 	}
 	chat, err := h.store.GetChat(h.ctx, h.inst, bobPN.String())
 	must(t, err)

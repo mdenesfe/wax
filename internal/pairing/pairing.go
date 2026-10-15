@@ -5,19 +5,20 @@ package pairing
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/waadv"
 	"github.com/mdenesfe/wax/internal/proto/wacompanionreg"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // QRPrefix is prepended to the comma separated QR payload. Phones that scan
@@ -86,7 +87,7 @@ func QRContent(ref []byte, noisePub, identityPub [32]byte, advSecret [32]byte, c
 }
 
 // ParsePairDevice extracts the QR refs from a pair-device IQ, in order.
-func ParsePairDevice(iq *binary.Node) ([][]byte, error) {
+func ParsePairDevice(iq *wabin.Node) ([][]byte, error) {
 	pd, ok := iq.Child("pair-device")
 	if !ok {
 		return nil, fmt.Errorf("%w: no <pair-device>", ErrMalformed)
@@ -106,8 +107,8 @@ func ParsePairDevice(iq *binary.Node) ([][]byte, error) {
 // Success is the content of a pair-success IQ.
 type Success struct {
 	IQID           string
-	JID            binary.JID // our new device JID (user:device@s.whatsapp.net)
-	LID            binary.JID
+	JID            wabin.JID // our new device JID (user:device@s.whatsapp.net)
+	LID            wabin.JID
 	Platform       string // the phone's platform, e.g. "android"
 	BusinessName   string
 	DeviceIdentity []byte // serialized ADVSignedDeviceIdentityHMAC
@@ -116,7 +117,7 @@ type Success struct {
 }
 
 // ParsePairSuccess reads an <iq><pair-success>…</pair-success></iq> node.
-func ParsePairSuccess(iq *binary.Node) (*Success, error) {
+func ParsePairSuccess(iq *wabin.Node) (*Success, error) {
 	ps, ok := iq.Child("pair-success")
 	if !ok {
 		return nil, fmt.Errorf("%w: no <pair-success>", ErrMalformed)
@@ -201,12 +202,11 @@ func Verify(s *Success, identity *keys.SigningKey, advSecret [32]byte) (*Result,
 	if err := proto.Unmarshal(s.DeviceIdentity, &container); err != nil {
 		return nil, fmt.Errorf("%w: identity container: %w", ErrMalformed, err)
 	}
-	mac := hmac.New(sha256.New, advSecret[:])
+	var prefix []byte
 	if container.GetAccountType() == waadv.ADVEncryptionType_HOSTED {
-		mac.Write(prefixHostedAccountSig)
+		prefix = prefixHostedAccountSig
 	}
-	mac.Write(container.GetDetails())
-	if !hmac.Equal(mac.Sum(nil), container.GetHMAC()) {
+	if !hmac.Equal(cryptoutil.HMACSHA256(advSecret[:], prefix, container.GetDetails()), container.GetHMAC()) {
 		return nil, ErrHMACMismatch
 	}
 
@@ -222,15 +222,15 @@ func Verify(s *Success, identity *keys.SigningKey, advSecret [32]byte) (*Result,
 	if len(accountKey) != keys.KeySize || len(signed.GetAccountSignature()) != keys.SignatureSize {
 		return nil, fmt.Errorf("%w: account key/signature length", ErrMalformed)
 	}
-	prefix := prefixAccountSig
+	prefix = prefixAccountSig
 	if details.GetDeviceType() == waadv.ADVEncryptionType_HOSTED {
 		prefix = prefixHostedAccountSig
 	}
-	if !keys.VerifySlice(accountKey, concat(prefix, signed.GetDetails(), identity.Pub[:]), signed.GetAccountSignature()) {
+	if !keys.VerifySlice(accountKey, slices.Concat(prefix, signed.GetDetails(), identity.Pub[:]), signed.GetAccountSignature()) {
 		return nil, ErrSignatureMismatch
 	}
 
-	devSig := identity.Sign(concat(prefixDeviceSig, signed.GetDetails(), identity.Pub[:], accountKey))
+	devSig := identity.Sign(slices.Concat(prefixDeviceSig, signed.GetDetails(), identity.Pub[:], accountKey))
 	signed.DeviceSignature = devSig[:]
 	account, err := proto.Marshal(&signed)
 	if err != nil {
@@ -253,15 +253,15 @@ func Verify(s *Success, identity *keys.SigningKey, advSecret [32]byte) (*Result,
 
 // ConfirmNode is the IQ result that completes pairing. The server answers it
 // by ending the stream with code 515; the client then logs in.
-func (r *Result) ConfirmNode(iqID string) binary.Node {
-	return binary.Node{
+func (r *Result) ConfirmNode(iqID string) wabin.Node {
+	return wabin.Node{
 		Tag:   "iq",
-		Attrs: binary.Attrs{"to": binary.ServerJID, "type": "result", "id": iqID},
-		Content: []binary.Node{{
+		Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "result", "id": iqID},
+		Content: []wabin.Node{{
 			Tag: "pair-device-sign",
-			Content: []binary.Node{{
+			Content: []wabin.Node{{
 				Tag:     "device-identity",
-				Attrs:   binary.Attrs{"key-index": r.KeyIndex},
+				Attrs:   wabin.Attrs{"key-index": r.KeyIndex},
 				Content: r.selfSigned,
 			}},
 		}},
@@ -270,7 +270,7 @@ func (r *Result) ConfirmNode(iqID string) binary.Node {
 
 // ErrorNode reports a pairing failure to the server, so the phone shows an
 // error instead of waiting.
-func ErrorNode(iqID string, err error) binary.Node {
+func ErrorNode(iqID string, err error) wabin.Node {
 	code, text := 500, "internal-error"
 	switch {
 	case errors.Is(err, ErrHMACMismatch):
@@ -278,24 +278,12 @@ func ErrorNode(iqID string, err error) binary.Node {
 	case errors.Is(err, ErrSignatureMismatch):
 		code, text = 401, "signature-mismatch"
 	}
-	return binary.Node{
+	return wabin.Node{
 		Tag:   "iq",
-		Attrs: binary.Attrs{"to": binary.ServerJID, "type": "error", "id": iqID},
-		Content: []binary.Node{{
+		Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "error", "id": iqID},
+		Content: []wabin.Node{{
 			Tag:   "error",
-			Attrs: binary.Attrs{"code": code, "text": text},
+			Attrs: wabin.Attrs{"code": code, "text": text},
 		}},
 	}
-}
-
-func concat(parts ...[]byte) []byte {
-	var n int
-	for _, p := range parts {
-		n += len(p)
-	}
-	out := make([]byte, 0, n)
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
 }

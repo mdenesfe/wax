@@ -2,12 +2,11 @@ package client
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Prekey pool sizes. Each one-time prekey is consumed by one peer device
@@ -71,8 +70,6 @@ func (c *Client) uploadPreKeys(ctx context.Context, s *session, initial bool) er
 		return err
 	}
 	dev := s.dev
-	var regID [4]byte
-	binary.BigEndian.PutUint32(regID[:], dev.RegistrationID)
 	list := make([]wabin.Node, len(pks))
 	ids := make([]uint32, len(pks))
 	for i, pk := range pks {
@@ -85,7 +82,7 @@ func (c *Client) uploadPreKeys(ctx context.Context, s *session, initial bool) er
 		Tag:   "iq",
 		Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "set", "xmlns": "encrypt"},
 		Content: []wabin.Node{
-			{Tag: "registration", Content: regID[:]},
+			{Tag: "registration", Content: be32(dev.RegistrationID)},
 			{Tag: "type", Content: []byte{keys.DJBType}},
 			{Tag: "identity", Content: dev.IdentityKey.Pub[:]},
 			{Tag: "list", Content: list},
@@ -104,10 +101,8 @@ func (c *Client) uploadPreKeys(ctx context.Context, s *session, initial bool) er
 
 // preKeyNode encodes a prekey: ids are 3 bytes big-endian on the wire.
 func preKeyNode(tag string, id uint32, pub [32]byte, signature []byte) wabin.Node {
-	var idb [4]byte
-	binary.BigEndian.PutUint32(idb[:], id)
 	children := []wabin.Node{
-		{Tag: "id", Content: idb[1:]},
+		{Tag: "id", Content: keyID3(id)},
 		{Tag: "value", Content: pub[:]},
 	}
 	if signature != nil {

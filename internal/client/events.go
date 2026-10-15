@@ -3,9 +3,9 @@ package client
 import (
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Event is emitted to Config.OnEvent. Handlers run synchronously on the
@@ -145,6 +145,15 @@ type AppStateSyncComplete struct {
 	Version    uint64
 }
 
+// AppStateUnverified reports a collection whose server LTHash could not be
+// verified although every record was authenticated individually (see
+// appstate.HashState). Its data is used; the phone is asked for a
+// recovery copy.
+type AppStateUnverified struct {
+	Collection string
+	Version    uint64
+}
+
 // AppStateSyncError reports a failed collection sync (it is retried on the
 // next server_sync notification or reconnect).
 type AppStateSyncError struct {
@@ -168,6 +177,7 @@ type AccountSync struct{ Changes []string }
 func (AppStateChange) eventName() string       { return "appstate_change" }
 func (AppStateSyncComplete) eventName() string { return "appstate_sync_complete" }
 func (AppStateSyncError) eventName() string    { return "appstate_sync_error" }
+func (AppStateUnverified) eventName() string   { return "appstate_unverified" }
 func (HistorySync) eventName() string          { return "history_sync" }
 func (AccountSync) eventName() string          { return "account_sync" }
 func (GroupUpdate) eventName() string          { return "group_update" }

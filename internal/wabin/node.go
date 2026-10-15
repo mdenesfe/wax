@@ -1,4 +1,4 @@
-package binary
+package wabin
 
 import (
 	"errors"
@@ -22,6 +22,17 @@ var (
 // decimal/textual form; nil and "" values are omitted.
 type Attrs map[string]any
 
+// CopyFrom copies the listed keys that are present in src into a and
+// returns a, for building replies that echo routing attributes.
+func (a Attrs) CopyFrom(src Attrs, keys ...string) Attrs {
+	for _, k := range keys {
+		if v, ok := src[k]; ok {
+			a[k] = v
+		}
+	}
+	return a
+}
+
 // Node is one binary XML element.
 //
 // Content is one of: nil, []Node (children), []byte (binary payload) or
@@ -33,10 +44,21 @@ type Node struct {
 	Content any
 }
 
-// Children returns the child nodes, or nil if the content is not a node list.
+// Children returns the child nodes, or nil if the content is not a node
+// list. Like Child, ChildrenByTag and HasChild it accepts a nil node, so
+// lookups can be chained without nil checks.
 func (n *Node) Children() []Node {
+	if n == nil {
+		return nil
+	}
 	c, _ := n.Content.([]Node)
 	return c
+}
+
+// HasChild reports whether a child with the given tag exists.
+func (n *Node) HasChild(tag string) bool {
+	_, ok := n.Child(tag)
+	return ok
 }
 
 // Child returns the first child with the given tag.

@@ -5,9 +5,9 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/wa6"
+	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
 )
 
@@ -41,19 +41,19 @@ func TestRegistrationPayload(t *testing.T) {
 
 func TestClassifyDisconnect(t *testing.T) {
 	cases := []struct {
-		node binary.Node
+		node wabin.Node
 		want DisconnectAction
 	}{
-		{binary.Node{Tag: "stream:error", Attrs: binary.Attrs{"code": "515"}}, ActionReconnectNow},
-		{binary.Node{Tag: "stream:error", Attrs: binary.Attrs{"code": "503"}}, ActionReconnect},
-		{binary.Node{Tag: "stream:error", Attrs: binary.Attrs{"code": "401"}, Content: []binary.Node{{Tag: "conflict", Attrs: binary.Attrs{"type": "device_removed"}}}}, ActionLoggedOut},
-		{binary.Node{Tag: "stream:error", Content: []binary.Node{{Tag: "conflict", Attrs: binary.Attrs{"type": "replaced"}}}}, ActionReplaced},
-		{binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "401"}}, ActionLoggedOut},
-		{binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "405"}}, ActionUpgradeRequired},
-		{binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "402"}}, ActionTempBanned},
-		{binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "503"}}, ActionReconnect},
-		{binary.Node{Tag: "failure", Attrs: binary.Attrs{"reason": "999"}}, ActionFatal},
-		{binary.Node{Tag: "iq"}, ActionNone},
+		{wabin.Node{Tag: "stream:error", Attrs: wabin.Attrs{"code": "515"}}, ActionReconnectNow},
+		{wabin.Node{Tag: "stream:error", Attrs: wabin.Attrs{"code": "503"}}, ActionReconnect},
+		{wabin.Node{Tag: "stream:error", Attrs: wabin.Attrs{"code": "401"}, Content: []wabin.Node{{Tag: "conflict", Attrs: wabin.Attrs{"type": "device_removed"}}}}, ActionLoggedOut},
+		{wabin.Node{Tag: "stream:error", Content: []wabin.Node{{Tag: "conflict", Attrs: wabin.Attrs{"type": "replaced"}}}}, ActionReplaced},
+		{wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "401"}}, ActionLoggedOut},
+		{wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "405"}}, ActionUpgradeRequired},
+		{wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "402"}}, ActionTempBanned},
+		{wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "503"}}, ActionReconnect},
+		{wabin.Node{Tag: "failure", Attrs: wabin.Attrs{"reason": "999"}}, ActionFatal},
+		{wabin.Node{Tag: "iq"}, ActionNone},
 	}
 	for i, c := range cases {
 		if got := ClassifyDisconnect(&c.node).Action; got != c.want {
@@ -63,7 +63,7 @@ func TestClassifyDisconnect(t *testing.T) {
 }
 
 func TestConnHeaderDictVersion(t *testing.T) {
-	if ConnHeader[3] != binary.DictVersion {
+	if ConnHeader[3] != wabin.DictVersion {
 		t.Fatal("connection header must carry the token dictionary version")
 	}
 }

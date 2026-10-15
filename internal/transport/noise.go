@@ -1,13 +1,11 @@
 package transport
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/binary"
-	"fmt"
 
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 )
 
@@ -53,12 +51,10 @@ func (s *symmetricState) mixHash(data []byte) {
 }
 
 func (s *symmetricState) mixKey(ikm []byte) error {
-	out, err := hkdf.Key(sha256.New, ikm, s.ck[:], "", 64)
-	if err != nil {
-		return fmt.Errorf("hkdf: %w", err)
-	}
+	out := cryptoutil.HKDF(ikm, s.ck[:], "", 64)
 	copy(s.ck[:], out[:32])
-	s.aead, err = newGCM(out[32:])
+	var err error
+	s.aead, err = cryptoutil.NewGCM(out[32:])
 	if err != nil {
 		return err
 	}
@@ -95,29 +91,14 @@ func (s *symmetricState) decryptAndHash(ciphertext []byte) ([]byte, error) {
 // split derives the two transport keys: the first 32 bytes encrypt
 // initiator→responder traffic, the second responder→initiator.
 func (s *symmetricState) split() (initiatorToResponder, responderToInitiator cipher.AEAD, err error) {
-	out, err := hkdf.Key(sha256.New, nil, s.ck[:], "", 64)
-	if err != nil {
-		return nil, nil, fmt.Errorf("hkdf: %w", err)
-	}
-	if initiatorToResponder, err = newGCM(out[:32]); err != nil {
+	out := cryptoutil.HKDF(nil, s.ck[:], "", 64)
+	if initiatorToResponder, err = cryptoutil.NewGCM(out[:32]); err != nil {
 		return nil, nil, err
 	}
-	if responderToInitiator, err = newGCM(out[32:]); err != nil {
+	if responderToInitiator, err = cryptoutil.NewGCM(out[32:]); err != nil {
 		return nil, nil, err
 	}
 	return initiatorToResponder, responderToInitiator, nil
-}
-
-func newGCM(key []byte) (cipher.AEAD, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("aes: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("gcm: %w", err)
-	}
-	return gcm, nil
 }
 
 func nonceFor(counter uint32) []byte {

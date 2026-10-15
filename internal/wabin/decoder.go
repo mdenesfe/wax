@@ -1,4 +1,4 @@
-package binary
+package wabin
 
 import (
 	"bytes"
@@ -183,116 +183,17 @@ func (d *decoder) readValue(asString bool, depth int) (any, error) {
 	case tagListEmpty:
 		return nil, nil
 	case tagList8, tagList16:
-		size, err := d.listSize(tag)
-		if err != nil {
-			return nil, err
-		}
-		// Each node needs at least 2 bytes; reject absurd sizes before allocating.
-		if size*2 > len(d.data)-d.pos {
-			return nil, fmt.Errorf("%w: list of %d nodes in %d bytes", errShort, size, len(d.data)-d.pos)
-		}
-		nodes := make([]Node, size)
-		for i := range nodes {
-			n, err := d.readNode(depth + 1)
-			if err != nil {
-				return nil, err
-			}
-			nodes[i] = *n
-		}
-		return nodes, nil
+		return d.readList(tag, depth)
 	case tagBinary8, tagBinary20, tagBinary32:
-		var size int
-		switch tag {
-		case tagBinary8:
-			size, err = d.uintN(1)
-		case tagBinary20:
-			size, err = d.uintN(3)
-			size &= 0x0fffff
-		default:
-			size, err = d.uintN(4)
-		}
-		if err != nil {
-			return nil, err
-		}
-		b, err := d.raw(size)
-		if err != nil {
-			return nil, err
-		}
-		if asString {
-			return string(b), nil
-		}
-		return b, nil
+		return d.readBinary(tag, asString)
 	case tagDictionary0, tagDictionary1, tagDictionary2, tagDictionary3:
-		idx, err := d.byte1()
-		if err != nil {
-			return nil, err
-		}
-		dict := doubleByteTokens[tag-tagDictionary0]
-		if int(idx) >= len(dict) {
-			return nil, fmt.Errorf("%w: dictionary %d index %d", ErrInvalidToken, tag-tagDictionary0, idx)
-		}
-		return dict[idx], nil
+		return d.readDictionary(tag)
 	case tagJIDPair:
-		user, err := d.readValue(true, depth)
-		if err != nil {
-			return nil, err
-		}
-		server, err := d.readValue(true, depth)
-		if err != nil {
-			return nil, err
-		}
-		us, uok := user.(string)
-		ss, sok := server.(string)
-		if (user != nil && !uok) || !sok {
-			return nil, fmt.Errorf("%w: jid pair parts %T@%T", ErrInvalidJID, user, server)
-		}
-		return JID{User: us, Server: ss}, nil
+		return d.readJIDPair(depth)
 	case tagADJID:
-		agent, err := d.byte1()
-		if err != nil {
-			return nil, err
-		}
-		device, err := d.byte1()
-		if err != nil {
-			return nil, err
-		}
-		user, err := d.readString(depth)
-		if err != nil {
-			return nil, err
-		}
-		return newADJID(user, agent, device), nil
-	case tagFBJID:
-		user, err := d.readString(depth)
-		if err != nil {
-			return nil, err
-		}
-		device, err := d.uintN(2)
-		if err != nil {
-			return nil, err
-		}
-		server, err := d.readString(depth)
-		if err != nil {
-			return nil, err
-		}
-		return JID{User: user, Device: uint16(device), Server: server}, nil
-	case tagInteropJID:
-		user, err := d.readString(depth)
-		if err != nil {
-			return nil, err
-		}
-		device, err := d.uintN(2)
-		if err != nil {
-			return nil, err
-		}
-		integrator, err := d.uintN(2)
-		if err != nil {
-			return nil, err
-		}
-		server, err := d.readString(depth)
-		if err != nil {
-			return nil, err
-		}
-		return JID{User: user, Device: uint16(device), Integrator: uint16(integrator), Server: server}, nil
+		return d.readADJID(depth)
+	case tagFBJID, tagInteropJID:
+		return d.readDeviceJID(tag == tagInteropJID, depth)
 	case tagNibble8:
 		return d.readPacked(unpackNibble)
 	case tagHex8:
@@ -302,6 +203,125 @@ func (d *decoder) readValue(asString bool, depth int) (any, error) {
 		return singleByteTokens[tag], nil
 	}
 	return nil, fmt.Errorf("%w: tag %d", ErrInvalidToken, tag)
+}
+
+func (d *decoder) readList(tag byte, depth int) ([]Node, error) {
+	size, err := d.listSize(tag)
+	if err != nil {
+		return nil, err
+	}
+	// Each node needs at least 2 bytes; reject absurd sizes before allocating.
+	if size*2 > len(d.data)-d.pos {
+		return nil, fmt.Errorf("%w: list of %d nodes in %d bytes", errShort, size, len(d.data)-d.pos)
+	}
+	nodes := make([]Node, size)
+	for i := range nodes {
+		n, err := d.readNode(depth + 1)
+		if err != nil {
+			return nil, err
+		}
+		nodes[i] = *n
+	}
+	return nodes, nil
+}
+
+func (d *decoder) readBinary(tag byte, asString bool) (any, error) {
+	var size int
+	var err error
+	switch tag {
+	case tagBinary8:
+		size, err = d.uintN(1)
+	case tagBinary20:
+		size, err = d.uintN(3)
+		size &= 0x0fffff
+	default:
+		size, err = d.uintN(4)
+	}
+	if err != nil {
+		return nil, err
+	}
+	b, err := d.raw(size)
+	if err != nil {
+		return nil, err
+	}
+	if asString {
+		return string(b), nil
+	}
+	return b, nil
+}
+
+func (d *decoder) readDictionary(tag byte) (string, error) {
+	idx, err := d.byte1()
+	if err != nil {
+		return "", err
+	}
+	dict := doubleByteTokens[tag-tagDictionary0]
+	if int(idx) >= len(dict) {
+		return "", fmt.Errorf("%w: dictionary %d index %d", ErrInvalidToken, tag-tagDictionary0, idx)
+	}
+	return dict[idx], nil
+}
+
+// readJIDPair reads user@server; the user part may be absent (nil).
+func (d *decoder) readJIDPair(depth int) (JID, error) {
+	user, err := d.readValue(true, depth)
+	if err != nil {
+		return JID{}, err
+	}
+	server, err := d.readValue(true, depth)
+	if err != nil {
+		return JID{}, err
+	}
+	us, uok := user.(string)
+	ss, sok := server.(string)
+	if (user != nil && !uok) || !sok {
+		return JID{}, fmt.Errorf("%w: jid pair parts %T@%T", ErrInvalidJID, user, server)
+	}
+	return JID{User: us, Server: ss}, nil
+}
+
+// readADJID reads agent, device and user of a device JID on the default
+// (phone number or LID) servers.
+func (d *decoder) readADJID(depth int) (JID, error) {
+	agent, err := d.byte1()
+	if err != nil {
+		return JID{}, err
+	}
+	device, err := d.byte1()
+	if err != nil {
+		return JID{}, err
+	}
+	user, err := d.readString(depth)
+	if err != nil {
+		return JID{}, err
+	}
+	return newADJID(user, agent, device), nil
+}
+
+// readDeviceJID reads an FB JID (user, device, server) or, with
+// interop, an interop JID (user, device, integrator, server).
+func (d *decoder) readDeviceJID(interop bool, depth int) (JID, error) {
+	var j JID
+	var err error
+	if j.User, err = d.readString(depth); err != nil {
+		return JID{}, err
+	}
+	device, err := d.uintN(2)
+	if err != nil {
+		return JID{}, err
+	}
+	j.Device = uint16(device)
+	if interop {
+		integrator, err := d.uintN(2)
+		if err != nil {
+			return JID{}, err
+		}
+		j.Integrator = uint16(integrator)
+	}
+	if j.Server, err = d.readString(depth); err != nil {
+		return JID{}, err
+	}
+	return j, nil
 }
 
 func (d *decoder) readString(depth int) (string, error) {

@@ -2,16 +2,20 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // Errors returned by SendMessage.
@@ -19,6 +23,7 @@ var (
 	ErrNotLoggedIn     = errors.New("client: not logged in")
 	ErrServerRejected  = errors.New("client: server rejected the message")
 	ErrUnsupportedChat = errors.New("client: unsupported chat type")
+	ErrNotOnWhatsApp   = errors.New("client: recipient is not on WhatsApp")
 )
 
 // sendAckTimeout bounds the wait for the server's <ack> of a message.
@@ -54,6 +59,22 @@ func (c *Client) activeSession() (*session, error) {
 // caller (the send queue) decides whether to retry. Retrying with the same
 // message is safe: Signal sessions tolerate gaps in message counters.
 func (c *Client) SendMessage(ctx context.Context, to wabin.JID, msg *wae2e.Message) (*SendResult, error) {
+	return c.SendMessageWithID(ctx, to, msg, "")
+}
+
+// GenerateMessageID returns a new random message id in WhatsApp Web's
+// format. Callers that may retry a send (the outbox) generate the id once
+// and pass it to every attempt, so a resend after a crash is recognized as
+// the same message by recipients instead of appearing twice.
+func GenerateMessageID() string {
+	var b [9]byte
+	_, _ = rand.Read(b[:])
+	return webMessageIDPrefix + strings.ToUpper(hex.EncodeToString(b[:]))
+}
+
+// SendMessageWithID is SendMessage with a caller-chosen message id ("" =
+// generate one).
+func (c *Client) SendMessageWithID(ctx context.Context, to wabin.JID, msg *wae2e.Message, id string) (*SendResult, error) {
 	s, err := c.activeSession()
 	if err != nil {
 		return nil, err
@@ -61,7 +82,9 @@ func (c *Client) SendMessage(ctx context.Context, to wabin.JID, msg *wae2e.Messa
 	if to.Device != 0 {
 		return nil, fmt.Errorf("%w: recipient must be a user or group JID, not a device", ErrUnsupportedChat)
 	}
-	id := newMessageID(s.dev.JID)
+	if id == "" {
+		id = newMessageID(s.dev.JID)
+	}
 	switch to.Server {
 	case wabin.ServerUser, wabin.ServerLID:
 		return c.sendDirect(ctx, s, to, id, msg)
@@ -108,11 +131,7 @@ func (c *Client) sendDirect(ctx context.Context, s *session, to wabin.JID, id st
 	if err != nil {
 		return nil, fmt.Errorf("device list: %w", err)
 	}
-	encAttrs := wabin.Attrs{}
-	if mt := mediaType(msg); mt != "" {
-		encAttrs["mediatype"] = mt
-	}
-	participants, includeIdentity, _, err := c.encryptForDevices(ctx, s, devices, ownDevice, ownUser, plaintext, dsm, encAttrs)
+	participants, includeIdentity, _, err := c.encryptForDevices(ctx, s, devices, ownDevice, ownUser, plaintext, dsm, withMediaType(wabin.Attrs{}, msg))
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +174,7 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 	}
 	users := []wabin.JID{ownUser}
 	for _, p := range gi.Participants {
-		if p.JID.User != ownUser.User && p.JID.User != ownDevice.User && p.JID.User != s.dev.JID.User {
+		if !slices.Contains([]string{ownUser.User, ownDevice.User, s.dev.JID.User}, p.JID.User) {
 			users = append(users, p.JID.ToNonAD())
 		}
 	}
@@ -174,54 +193,13 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 	if err != nil {
 		return nil, fmt.Errorf("device list: %w", err)
 	}
-	// Encrypt with our sender key; this also yields its distribution
-	// message for devices that need it.
-	skAddr := signalAddress(ownDevice)
-	var skdm, skmsg []byte
-	created := false
-	unlock := c.locks.lock("sk|" + group.String() + "|" + skAddr)
-	err = c.cfg.Store.InTx(ctx, func(tx *store.Store) error {
-		rec, err := tx.LoadSenderKey(ctx, c.cfg.InstanceID, group.String(), skAddr)
-		if err != nil {
-			return err
-		}
-		created = rec.IsEmpty()
-		if skdm, err = rec.CreateDistribution(); err != nil {
-			return err
-		}
-		if skmsg, err = rec.EncryptGroup(padMessage(append([]byte(nil), plaintext...))); err != nil {
-			return err
-		}
-		if created {
-			if err := tx.ForgetSenderKeyRecipients(ctx, c.cfg.InstanceID, group.String(), ""); err != nil {
-				return err
-			}
-		}
-		return tx.PutSenderKey(ctx, c.cfg.InstanceID, group.String(), skAddr, rec)
-	})
-	unlock()
+	skdm, skmsg, err := c.senderKeyEncrypt(ctx, group, ownDevice, plaintext)
 	if err != nil {
 		return nil, fmt.Errorf("sender key: %w", err)
 	}
-
-	// Which devices still need our sender key?
-	targets := c.filterTargets(devices, ownDevice)
-	addrs := make([]string, len(targets))
-	encJIDs := c.encryptionJIDs(ctx, targets)
-	for i, d := range targets {
-		addrs[i] = signalAddress(encJIDs[d])
-	}
-	have, err := c.cfg.Store.SenderKeyRecipients(ctx, c.cfg.InstanceID, group.String(), addrs)
+	need, needAddrs, err := c.senderKeyTargets(ctx, group, c.filterTargets(devices, ownDevice))
 	if err != nil {
 		return nil, err
-	}
-	var need []wabin.JID
-	var needAddrs []string
-	for i, d := range targets {
-		if !have[addrs[i]] {
-			need = append(need, d)
-			needAddrs = append(needAddrs, addrs[i])
-		}
 	}
 	skdmMsg, err := proto.Marshal(&wae2e.Message{SenderKeyDistributionMessage: &wae2e.SenderKeyDistributionMessage{
 		GroupID: proto.String(group.String()), AxolotlSenderKeyDistributionMessage: skdm,
@@ -238,10 +216,7 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 	if gi.AddressingMode == "lid" {
 		attrs["addressing_mode"] = "lid"
 	}
-	skAttrs := wabin.Attrs{"v": "2", "type": "skmsg"}
-	if mt := mediaType(msg); mt != "" {
-		skAttrs["mediatype"] = mt
-	}
+	skAttrs := withMediaType(wabin.Attrs{"v": "2", "type": "skmsg"}, msg)
 	var content []wabin.Node
 	if len(participants) > 0 {
 		content = append(content, wabin.Node{Tag: "participants", Content: participants})
@@ -273,6 +248,86 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 		}
 	}
 	return &res.SendResult, nil
+}
+
+// senderKeyEncrypt encrypts plaintext with our sender key for group,
+// creating the key on first use. It also returns the key's distribution
+// message for devices that do not have it yet.
+func (c *Client) senderKeyEncrypt(ctx context.Context, group, ownDevice wabin.JID, plaintext []byte) (skdm, skmsg []byte, err error) {
+	inst, gid, addr := c.cfg.InstanceID, group.String(), signalAddress(ownDevice)
+	unlock := c.locks.lock("sk|" + gid + "|" + addr)
+	defer unlock()
+	err = c.cfg.Store.InTx(ctx, func(tx *store.Store) error {
+		rec, err := tx.LoadSenderKey(ctx, inst, gid, addr)
+		if err != nil {
+			return err
+		}
+		created := rec.IsEmpty()
+		if skdm, err = rec.CreateDistribution(); err != nil {
+			return err
+		}
+		if skmsg, err = rec.EncryptGroup(padMessage(slices.Clone(plaintext))); err != nil {
+			return err
+		}
+		// A new key must be distributed to everyone again.
+		if created {
+			if err := tx.ForgetSenderKeyRecipients(ctx, inst, gid, ""); err != nil {
+				return err
+			}
+		}
+		return tx.PutSenderKey(ctx, inst, gid, addr, rec)
+	})
+	return skdm, skmsg, err
+}
+
+// senderKeyDistribution returns a distribution message for our current
+// sender key in group.
+func (c *Client) senderKeyDistribution(ctx context.Context, group, ownDevice wabin.JID) (skdm []byte, err error) {
+	inst, gid, addr := c.cfg.InstanceID, group.String(), signalAddress(ownDevice)
+	unlock := c.locks.lock("sk|" + gid + "|" + addr)
+	defer unlock()
+	err = c.cfg.Store.InTx(ctx, func(tx *store.Store) error {
+		rec, err := tx.LoadSenderKey(ctx, inst, gid, addr)
+		if err != nil {
+			return err
+		}
+		if skdm, err = rec.CreateDistribution(); err != nil {
+			return err
+		}
+		return tx.PutSenderKey(ctx, inst, gid, addr, rec)
+	})
+	return skdm, err
+}
+
+// senderKeyTargets returns the devices (and their signal addresses) that
+// do not have our sender key for group yet.
+func (c *Client) senderKeyTargets(ctx context.Context, group wabin.JID, targets []wabin.JID) ([]wabin.JID, []string, error) {
+	encJIDs := c.encryptionJIDs(ctx, targets)
+	addrs := make([]string, len(targets))
+	for i, d := range targets {
+		addrs[i] = signalAddress(encJIDs[d])
+	}
+	have, err := c.cfg.Store.SenderKeyRecipients(ctx, c.cfg.InstanceID, group.String(), addrs)
+	if err != nil {
+		return nil, nil, err
+	}
+	var need []wabin.JID
+	var needAddrs []string
+	for i, d := range targets {
+		if !have[addrs[i]] {
+			need = append(need, d)
+			needAddrs = append(needAddrs, addrs[i])
+		}
+	}
+	return need, needAddrs, nil
+}
+
+// withMediaType sets the "mediatype" attribute for media messages.
+func withMediaType(attrs wabin.Attrs, msg *wae2e.Message) wabin.Attrs {
+	if mt := mediaType(msg); mt != "" {
+		attrs["mediatype"] = mt
+	}
+	return attrs
 }
 
 type sentNode struct {

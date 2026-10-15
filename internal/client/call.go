@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	wabin "github.com/mdenesfe/wax/internal/binary"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // handleCall reports call signalling. We are not a calling device: the

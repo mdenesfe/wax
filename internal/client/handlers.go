@@ -3,19 +3,26 @@ package client
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"time"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/pairing"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // handleNode dispatches a server-initiated node. Unknown tags are logged and
 // ignored; they never end the session.
-func (s *session) handleNode(n *binary.Node) {
+func (s *session) handleNode(n *wabin.Node) {
 	if d := ClassifyDisconnect(n); d.Action != ActionNone {
-		s.log.Warn("server ended the stream", "tag", n.Tag, "action", d.Action.String(), "code", d.Code, "detail", d.Detail)
+		// A 515 restart is a normal protocol step (e.g. after pairing).
+		level := slog.LevelWarn
+		if d.Action == ActionReconnectNow {
+			level = slog.LevelInfo
+		}
+		s.log.Log(s.ctx, level, "server ended the stream", "tag", n.Tag, "action", d.Action.String(), "code", d.Code, "detail", d.Detail)
 		s.end(sessionResult{action: d.Action, code: d.Code, detail: d.Detail,
 			err: fmt.Errorf("%s code=%s %s", n.Tag, d.Code, d.Detail)})
 		return
@@ -46,7 +53,7 @@ func (s *session) handleNode(n *binary.Node) {
 	}
 }
 
-func (s *session) handleIQ(n *binary.Node) {
+func (s *session) handleIQ(n *wabin.Node) {
 	typ, _ := n.AttrString("type")
 	id, _ := n.AttrString("id")
 	switch {
@@ -56,11 +63,11 @@ func (s *session) handleIQ(n *binary.Node) {
 			return
 		}
 	case typ == "set":
-		if _, ok := n.Child("pair-device"); ok {
+		if n.HasChild("pair-device") {
 			s.handlePairDevice(n, id)
 			return
 		}
-		if _, ok := n.Child("pair-success"); ok {
+		if n.HasChild("pair-success") {
 			s.handlePairSuccess(n)
 			return
 		}
@@ -68,15 +75,15 @@ func (s *session) handleIQ(n *binary.Node) {
 	s.log.Debug("unhandled iq", "type", typ, "node", n.String())
 }
 
-func iqResult(id string, req *binary.Node) binary.Node {
-	to := binary.ServerJID
+func iqResult(id string, req *wabin.Node) wabin.Node {
+	to := wabin.ServerJID
 	if from, ok := req.AttrJID("from"); ok {
 		to = from
 	}
-	return binary.Node{Tag: "iq", Attrs: binary.Attrs{"to": to, "type": "result", "id": id}}
+	return wabin.Node{Tag: "iq", Attrs: wabin.Attrs{"to": to, "type": "result", "id": id}}
 }
 
-func (s *session) sendOrLog(n binary.Node) {
+func (s *session) sendOrLog(n wabin.Node) {
 	if err := s.sendNode(n); err != nil {
 		s.log.Warn("send failed", "tag", n.Tag, "error", err)
 	}
@@ -88,7 +95,7 @@ type qrState struct {
 	done chan struct{} // closed when pairing succeeds or the session ends
 }
 
-func (s *session) handlePairDevice(n *binary.Node, id string) {
+func (s *session) handlePairDevice(n *wabin.Node, id string) {
 	s.sendOrLog(iqResult(id, n))
 	if s.dev.IsPaired() {
 		s.log.Warn("server sent pair-device to an already paired device; ignoring")
@@ -128,7 +135,7 @@ func (s *session) handlePairDevice(n *binary.Node, id string) {
 	})
 }
 
-func (s *session) handlePairSuccess(n *binary.Node) {
+func (s *session) handlePairSuccess(n *wabin.Node) {
 	if s.pairing != nil {
 		close(s.pairing.done)
 		s.pairing = nil
@@ -176,7 +183,7 @@ func (s *session) handlePairSuccess(n *binary.Node) {
 		s.log.Error("failed to send pairing confirmation", "error", err)
 	}
 	*s.dev = dev
-	s.log.Info("paired successfully", "jid", binary.MaskJID(dev.JID), "platform", dev.Platform)
+	s.log.Info("paired successfully", "jid", wabin.MaskJID(dev.JID), "platform", dev.Platform)
 	s.c.emit(PairSuccess{JID: dev.JID, LID: dev.LID, Platform: dev.Platform, BusinessName: dev.BusinessName})
 	// The server now ends the stream with 515 and we reconnect with a login
 	// payload; nothing else to do here.
@@ -193,7 +200,7 @@ func (s *session) failPairing(iqID string, err error) {
 
 // --- login --------------------------------------------------------------------
 
-func (s *session) handleSuccess(n *binary.Node) {
+func (s *session) handleSuccess(n *wabin.Node) {
 	if !s.dev.IsPaired() {
 		s.log.Warn("got <success> on an unpaired connection; ignoring")
 		return
@@ -229,10 +236,10 @@ func (s *session) handleSuccess(n *binary.Node) {
 			s.log.Warn("prekey maintenance failed; will retry on next connect", "error", err)
 		}
 		// Tell the server we are an active client so it delivers messages.
-		if _, err := s.sendIQ(s.ctx, binary.Node{
+		if _, err := s.sendIQ(s.ctx, wabin.Node{
 			Tag:     "iq",
-			Attrs:   binary.Attrs{"to": binary.ServerJID, "type": "set", "xmlns": "passive"},
-			Content: []binary.Node{{Tag: "active"}},
+			Attrs:   wabin.Attrs{"to": wabin.ServerJID, "type": "set", "xmlns": "passive"},
+			Content: []wabin.Node{{Tag: "active"}},
 		}, 0); err != nil {
 			s.log.Warn("failed to set active", "error", err)
 		}
@@ -243,7 +250,7 @@ func (s *session) handleSuccess(n *binary.Node) {
 	})
 }
 
-func (s *session) handleIB(n *binary.Node) {
+func (s *session) handleIB(n *wabin.Node) {
 	for _, c := range n.Children() {
 		switch c.Tag {
 		case "offline_preview":
@@ -258,94 +265,103 @@ func (s *session) handleIB(n *binary.Node) {
 
 // --- notifications ------------------------------------------------------------
 
-func (s *session) handleNotification(n *binary.Node) {
+func (s *session) handleNotification(n *wabin.Node) {
 	typ, _ := n.AttrString("type")
 	from, _ := n.AttrJID("from")
-	if typ == "encrypt" && from == binary.ServerJID {
-		if cnt, ok := n.Child("count"); ok {
-			s.ack(n)
-			left, _ := cnt.AttrInt("value")
-			s.log.Info("server reports low prekey count", "left", left)
-			s.goSafe("prekey-refill", func() {
-				if err := s.c.uploadPreKeys(s.ctx, s, false); err != nil {
-					s.log.Warn("prekey refill failed", "error", err)
-				}
-			})
-			return
-		}
-	}
-	switch typ {
-	case "w:gp2":
+	switch {
+	case typ == "w:gp2":
 		s.handleGroupNotification(n)
-		return
-	case "server_sync":
-		// App state changed on another device: sync the named collections.
-		var names []string
-		for _, coll := range n.ChildrenByTag("collection") {
-			if name, ok := coll.AttrString("name"); ok {
-				names = append(names, name)
-			}
-		}
+	case typ == "server_sync":
+		s.onServerSync(n)
+	case typ == "account_sync":
+		s.onAccountSync(n)
+	case typ == "devices":
+		// A user added or removed a device: drop the cached list.
+		s.c.devCache.invalidate(from)
 		s.ack(n)
-		s.goSafe("appstate-notify", func() {
-			for _, name := range names {
-				if err := s.c.syncAppState(s.ctx, s, name, false); err != nil && !errors.Is(err, errMissingKeys) {
-					s.log.Warn("app state sync failed", "collection", name, "error", err)
-				}
-			}
-		})
-		return
-	case "account_sync":
-		var changes []string
-		for _, ch := range n.Children() {
-			changes = append(changes, ch.Tag)
-			if ch.Tag == "devices" {
-				s.c.devCache.invalidate(s.dev.JID.ToNonAD())
-				s.c.devCache.invalidate(s.dev.LID.ToNonAD())
-			}
-		}
-		s.c.emit(AccountSync{Changes: changes})
-		s.ack(n)
-		return
-	case "disappearing_mode", "mex", "picture", "status", "privacy_token":
+	case typ == "encrypt" && from == wabin.ServerJID && n.HasChild("count"):
+		s.onPreKeyCount(n)
+	case typ == "encrypt" && from.User != "" && n.HasChild("identity"):
+		s.onIdentityChange(n, from)
+	case slices.Contains([]string{"disappearing_mode", "mex", "picture", "status", "privacy_token"}, typ):
 		// Informational for us; acknowledged so they stop occupying the
 		// offline queue. (privacy_token storage is future work.)
 		s.log.Debug("notification acknowledged", "type", typ)
 		s.ack(n)
-		return
-	case "devices":
-		// A user added or removed a device: drop the cached list.
-		s.c.devCache.invalidate(from)
-		s.ack(n)
-		return
-	case "encrypt":
-		if _, ok := n.Child("identity"); ok && from.User != "" {
-			// The user re-registered: their old sessions are useless.
-			if err := s.c.cfg.Store.DeleteUserSessions(s.ctx, s.c.cfg.InstanceID, signalAddressName(from.ToNonAD())); err != nil {
-				s.log.Warn("failed to drop sessions after identity change", "error", err)
-				return // unacked: retried on redelivery
-			}
-			s.c.devCache.invalidate(from)
-			s.c.emit(IdentityChanged{JID: from})
-			s.ack(n)
-			return
+	default:
+		s.deferStanza(n, "notification type "+typ+" not implemented yet")
+	}
+}
+
+// onPreKeyCount refills our prekeys when the server reports few left.
+func (s *session) onPreKeyCount(n *wabin.Node) {
+	s.ack(n)
+	cnt, _ := n.Child("count")
+	left, _ := cnt.AttrInt("value")
+	s.log.Info("server reports low prekey count", "left", left)
+	s.goSafe("prekey-refill", func() {
+		if err := s.c.uploadPreKeys(s.ctx, s, false); err != nil {
+			s.log.Warn("prekey refill failed", "error", err)
+		}
+	})
+}
+
+// onServerSync syncs the app state collections another device changed.
+func (s *session) onServerSync(n *wabin.Node) {
+	var names []string
+	for _, coll := range n.ChildrenByTag("collection") {
+		if name, ok := coll.AttrString("name"); ok {
+			names = append(names, name)
 		}
 	}
-	// Other notifications are handled in later phases.
-	s.deferStanza(n, "notification type "+typ+" not implemented yet")
+	s.ack(n)
+	s.goSafe("appstate-notify", func() {
+		for _, name := range names {
+			if err := s.c.syncAppState(s.ctx, s, name, false); err != nil && !errors.Is(err, errMissingKeys) {
+				s.log.Warn("app state sync failed", "collection", name, "error", err)
+			}
+		}
+	})
+}
+
+// onAccountSync reports account changes; a device change invalidates our
+// own cached device lists.
+func (s *session) onAccountSync(n *wabin.Node) {
+	var changes []string
+	for _, ch := range n.Children() {
+		changes = append(changes, ch.Tag)
+	}
+	if slices.Contains(changes, "devices") {
+		s.c.devCache.invalidate(s.dev.JID.ToNonAD())
+		s.c.devCache.invalidate(s.dev.LID.ToNonAD())
+	}
+	s.c.emit(AccountSync{Changes: changes})
+	s.ack(n)
+}
+
+// onIdentityChange drops the sessions of a user who re-registered: their
+// old sessions are useless.
+func (s *session) onIdentityChange(n *wabin.Node, from wabin.JID) {
+	if err := s.c.cfg.Store.DeleteUserSessions(s.ctx, s.c.cfg.InstanceID, signalAddressName(from.ToNonAD())); err != nil {
+		s.log.Warn("failed to drop sessions after identity change", "error", err)
+		return // unacked: retried on redelivery
+	}
+	s.c.devCache.invalidate(from)
+	s.c.emit(IdentityChanged{JID: from})
+	s.ack(n)
 }
 
 // deferStanza stores a stanza we cannot process yet and acknowledges it only
 // after the write succeeded. Leaving stanzas unacknowledged is not an
 // option: the server delivers its offline queue in windows and stops at
 // unacknowledged stanzas, which would also hold back messages we can handle.
-func (s *session) deferStanza(n *binary.Node, reason string) {
+func (s *session) deferStanza(n *wabin.Node, reason string) {
 	if s.replaying {
 		s.redeferred = true // already stored (and acked); keep the row
 		return
 	}
 	id, _ := n.AttrString("id")
-	raw, err := binary.Marshal(*n)
+	raw, err := wabin.Marshal(*n)
 	if err == nil {
 		err = s.c.cfg.Store.PutDeferred(s.ctx, s.c.cfg.InstanceID, n.Tag, id, reason, raw)
 	}
@@ -358,21 +374,23 @@ func (s *session) deferStanza(n *binary.Node, reason string) {
 }
 
 // ack acknowledges a stanza so the server removes it from our queue.
+func (s *session) ack(n *wabin.Node) { s.nack(n, 0) }
+
+// nack acknowledges a stanza with an error code (0 for a plain ack).
 // Replayed stanzas were acknowledged when they were deferred.
-func (s *session) ack(n *binary.Node) {
+func (s *session) nack(n *wabin.Node, code int) {
 	if s.replaying {
 		return
 	}
-	attrs := binary.Attrs{"class": n.Tag, "id": n.Attrs["id"], "to": n.Attrs["from"]}
-	for _, k := range []string{"participant", "recipient"} {
-		if v, ok := n.Attrs[k]; ok {
-			attrs[k] = v
-		}
+	attrs := wabin.Attrs{"class": n.Tag, "id": n.Attrs["id"], "to": n.Attrs["from"]}.
+		CopyFrom(n.Attrs, "participant", "recipient")
+	if code != 0 {
+		attrs["error"] = code
 	}
 	if t, ok := n.Attrs["type"]; ok && n.Tag != "message" {
 		attrs["type"] = t
 	}
-	s.sendOrLog(binary.Node{Tag: "ack", Attrs: attrs})
+	s.sendOrLog(wabin.Node{Tag: "ack", Attrs: attrs})
 }
 
 // --- keepalive ----------------------------------------------------------------
@@ -391,10 +409,10 @@ func (s *session) keepAliveLoop() {
 		if !sleepCtx(s.ctx, interval) {
 			return
 		}
-		_, err := s.sendIQ(s.ctx, binary.Node{
+		_, err := s.sendIQ(s.ctx, wabin.Node{
 			Tag:     "iq",
-			Attrs:   binary.Attrs{"to": binary.ServerJID, "type": "get", "xmlns": "w:p"},
-			Content: []binary.Node{{Tag: "ping"}},
+			Attrs:   wabin.Attrs{"to": wabin.ServerJID, "type": "get", "xmlns": "w:p"},
+			Content: []wabin.Node{{Tag: "ping"}},
 		}, cfg.KeepAliveTimeout)
 		if s.ctx.Err() != nil {
 			return

@@ -9,14 +9,14 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/transport"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // ConnHeader is sent before the first frame and mixed into the Noise
 // prologue: "WA", protocol magic 6, token dictionary version.
-var ConnHeader = []byte{'W', 'A', 6, binary.DictVersion}
+var ConnHeader = []byte{'W', 'A', 6, wabin.DictVersion}
 
 // ConnectOptions configures Connect.
 type ConnectOptions struct {
@@ -66,8 +66,8 @@ func (c *Conn) NextID() string {
 }
 
 // SendNode encodes and sends a node. Safe for concurrent use.
-func (c *Conn) SendNode(ctx context.Context, n binary.Node) error {
-	data, err := binary.Marshal(n)
+func (c *Conn) SendNode(ctx context.Context, n wabin.Node) error {
+	data, err := wabin.Marshal(n)
 	if err != nil {
 		return fmt.Errorf("encode <%s>: %w", n.Tag, err)
 	}
@@ -78,16 +78,16 @@ func (c *Conn) SendNode(ctx context.Context, n binary.Node) error {
 // connection. A decoding error is not: it is returned wrapped in
 // *DecodeError with the raw payload, and the caller can log it and continue.
 // Must be called from a single goroutine.
-func (c *Conn) ReadNode(ctx context.Context) (*binary.Node, error) {
+func (c *Conn) ReadNode(ctx context.Context) (*wabin.Node, error) {
 	frame, err := c.nc.Receive(ctx)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := binary.Unpack(frame)
+	payload, err := wabin.Unpack(frame)
 	if err != nil {
 		return nil, &DecodeError{Raw: frame, Err: err}
 	}
-	n, err := binary.Unmarshal(payload)
+	n, err := wabin.Unmarshal(payload)
 	if err != nil {
 		return n, &DecodeError{Raw: payload, Err: err}
 	}

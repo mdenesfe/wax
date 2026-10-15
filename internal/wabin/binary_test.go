@@ -1,4 +1,4 @@
-package binary
+package wabin
 
 import (
 	"bytes"
@@ -252,6 +252,19 @@ func TestTokenTables(t *testing.T) {
 	for i, d := range doubleByteTokens {
 		if len(d) > 256 {
 			t.Fatalf("dictionary %d has %d entries", i, len(d))
+		}
+	}
+}
+
+func TestJIDText(t *testing.T) {
+	for _, s := range []string{"905550000000@s.whatsapp.net", "123:4@lid", "120363000000000000@g.us", ""} {
+		var j JID
+		if err := j.UnmarshalText([]byte(s)); err != nil {
+			t.Fatal(err)
+		}
+		b, err := j.MarshalText()
+		if err != nil || string(b) != s {
+			t.Fatalf("%q round-tripped to %q (%v)", s, b, err)
 		}
 	}
 }

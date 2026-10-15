@@ -7,14 +7,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/binary"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/proto/waadv"
+	"github.com/mdenesfe/wax/internal/wabin"
 )
 
 // fakePhone plays the primary device: it signs our identity with its account
@@ -23,10 +24,10 @@ type fakePhone struct {
 	account *keys.SigningKey
 }
 
-func (p *fakePhone) pairSuccess(t *testing.T, companionIdentity [32]byte, advSecret [32]byte, mutate func(*waadv.ADVSignedDeviceIdentity, *[]byte)) *binary.Node {
+func (p *fakePhone) pairSuccess(t *testing.T, companionIdentity [32]byte, advSecret [32]byte, mutate func(*waadv.ADVSignedDeviceIdentity, *[]byte)) *wabin.Node {
 	t.Helper()
 	details, _ := proto.Marshal(&waadv.ADVDeviceIdentity{RawID: proto.Uint32(77), Timestamp: proto.Uint64(1700000000), KeyIndex: proto.Uint32(3)})
-	sig := p.account.Sign(concat([]byte{6, 0}, details, companionIdentity[:]))
+	sig := p.account.Sign(slices.Concat([]byte{6, 0}, details, companionIdentity[:]))
 	signed := &waadv.ADVSignedDeviceIdentity{Details: details, AccountSignatureKey: p.account.Pub[:], AccountSignature: sig[:]}
 	key := advSecret[:]
 	if mutate != nil {
@@ -36,15 +37,15 @@ func (p *fakePhone) pairSuccess(t *testing.T, companionIdentity [32]byte, advSec
 	mac := hmac.New(sha256.New, key)
 	mac.Write(signedRaw)
 	container, _ := proto.Marshal(&waadv.ADVSignedDeviceIdentityHMAC{Details: signedRaw, HMAC: mac.Sum(nil)})
-	return &binary.Node{
+	return &wabin.Node{
 		Tag:   "iq",
-		Attrs: binary.Attrs{"id": "pair-1", "type": "set", "from": binary.ServerJID, "t": "1700000000"},
-		Content: []binary.Node{{Tag: "pair-success", Content: []binary.Node{
+		Attrs: wabin.Attrs{"id": "pair-1", "type": "set", "from": wabin.ServerJID, "t": "1700000000"},
+		Content: []wabin.Node{{Tag: "pair-success", Content: []wabin.Node{
 			{Tag: "device-identity", Content: container},
-			{Tag: "platform", Attrs: binary.Attrs{"name": "android"}},
-			{Tag: "device", Attrs: binary.Attrs{
-				"jid": binary.JID{User: "905550000000", Device: 12, Server: binary.ServerUser},
-				"lid": binary.JID{User: "11111111", Device: 12, Server: binary.ServerLID},
+			{Tag: "platform", Attrs: wabin.Attrs{"name": "android"}},
+			{Tag: "device", Attrs: wabin.Attrs{
+				"jid": wabin.JID{User: "905550000000", Device: 12, Server: wabin.ServerUser},
+				"lid": wabin.JID{User: "11111111", Device: 12, Server: wabin.ServerLID},
 			}},
 		}}},
 	}
@@ -65,7 +66,7 @@ func TestPairSuccessHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.JID.Device != 12 || s.LID.Server != binary.ServerLID || s.Platform != "android" || s.IQID != "pair-1" || s.ServerTime.Unix() != 1700000000 {
+	if s.JID.Device != 12 || s.LID.Server != wabin.ServerLID || s.Platform != "android" || s.IQID != "pair-1" || s.ServerTime.Unix() != 1700000000 {
 		t.Fatalf("parsed %+v", s)
 	}
 	res, err := Verify(s, ident, adv)
@@ -80,7 +81,7 @@ func TestPairSuccessHappyPath(t *testing.T) {
 	if err := proto.Unmarshal(res.Account, &acc); err != nil {
 		t.Fatal(err)
 	}
-	if !keys.VerifySlice(ident.Pub[:], concat([]byte{6, 1}, acc.Details, ident.Pub[:], acc.AccountSignatureKey), acc.DeviceSignature) {
+	if !keys.VerifySlice(ident.Pub[:], slices.Concat([]byte{6, 1}, acc.Details, ident.Pub[:], acc.AccountSignatureKey), acc.DeviceSignature) {
 		t.Fatal("device signature does not verify")
 	}
 	// The confirmation carries the identity without the account key.
@@ -95,7 +96,7 @@ func TestPairSuccessHappyPath(t *testing.T) {
 	if ki, _ := di.AttrString("key-index"); ki != "3" {
 		t.Fatalf("key-index %q", ki)
 	}
-	if _, err := binary.Marshal(confirm); err != nil {
+	if _, err := wabin.Marshal(confirm); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -145,7 +146,7 @@ func TestPairSuccessRejections(t *testing.T) {
 }
 
 func TestQRContentAndRefs(t *testing.T) {
-	iq := &binary.Node{Tag: "iq", Content: []binary.Node{{Tag: "pair-device", Content: []binary.Node{
+	iq := &wabin.Node{Tag: "iq", Content: []wabin.Node{{Tag: "pair-device", Content: []wabin.Node{
 		{Tag: "ref", Content: []byte("2@abc")}, {Tag: "ref", Content: []byte("2@def")},
 	}}}}
 	refs, err := ParsePairDevice(iq)

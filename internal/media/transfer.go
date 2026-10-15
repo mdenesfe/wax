@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/mdenesfe/wax/internal/backoff"
 )
 
 // Origin is sent with media requests, like WhatsApp Web does.
@@ -34,13 +36,28 @@ type Transfer struct {
 	MaxDownload int64        // 0: DefaultMaxDownload
 	// Scheme is "https" in production; tests may use "http".
 	Scheme string
+	// Retry spaces download retries on one host; zero: DefaultRetry.
+	Retry backoff.Policy
 }
+
+// DefaultRetry is the download retry policy.
+var DefaultRetry = backoff.Policy{Min: time.Second, Max: 4 * time.Second}
+
+// defaultHTTP is shared so connections are reused across transfers.
+var defaultHTTP = &http.Client{Timeout: 10 * time.Minute}
 
 func (t *Transfer) client() *http.Client {
 	if t.HTTP != nil {
 		return t.HTTP
 	}
-	return &http.Client{Timeout: 10 * time.Minute}
+	return defaultHTTP
+}
+
+func (t *Transfer) retry() backoff.Policy {
+	if t.Retry == (backoff.Policy{}) {
+		return DefaultRetry
+	}
+	return t.Retry
 }
 
 func (t *Transfer) scheme() string {
@@ -119,7 +136,7 @@ func (t *Transfer) Download(ctx context.Context, c *Conn, directPath string, fil
 		if !strings.Contains(directPath, "?") {
 			u = strings.Replace(u, "&hash=", "?hash=", 1)
 		}
-		for attempt := range 3 {
+		for attempt := 1; attempt <= 3; attempt++ {
 			data, err := t.get(ctx, u)
 			if err == nil {
 				return data, nil
@@ -136,7 +153,7 @@ func (t *Transfer) Download(ctx context.Context, c *Conn, directPath string, fil
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(time.Duration(attempt+1) * time.Second):
+			case <-time.After(t.retry().Delay(attempt)):
 			}
 		}
 	}
