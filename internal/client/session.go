@@ -68,6 +68,9 @@ type session struct {
 	loggedInAt time.Time   // set by the handler goroutine on <success>
 	pairing    *qrState    // non-nil while showing QR codes
 	ready      atomic.Bool // logged in and post-login setup done
+
+	// Set while replaying deferred stanzas (handler goroutine only).
+	replaying, redeferred bool
 }
 
 // runSession connects once and serves the connection until it ends.

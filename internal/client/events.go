@@ -93,6 +93,45 @@ type Receipt struct {
 // or new phone). Their sessions were reset.
 type IdentityChanged struct{ JID wabin.JID }
 
+// GroupUpdate reports a change to a group (members, subject, settings).
+// Changes lists the notification child tags (add, remove, subject, ...).
+type GroupUpdate struct {
+	JID     wabin.JID
+	Changes []string
+}
+
+// Presence reports a contact's online status (after SubscribePresence).
+type Presence struct {
+	From      wabin.JID
+	Available bool
+	LastSeen  time.Time
+}
+
+// ChatPresence reports typing ("composing") or "paused" in a chat.
+type ChatPresence struct {
+	Chat, Sender wabin.JID
+	State        string // composing, paused
+	Media        string // "audio" while recording a voice note
+}
+
+// CallEvent reports call signalling: Type is "offer" (incoming call),
+// "offer_notice", "accept", "reject", "terminate", ...
+type CallEvent struct {
+	Type      string
+	From      wabin.JID
+	CallID    string
+	Creator   wabin.JID
+	Group     wabin.JID
+	Video     bool
+	Reason    string
+	Platform  string
+	Timestamp time.Time
+}
+
+func (GroupUpdate) eventName() string          { return "group_update" }
+func (Presence) eventName() string             { return "presence" }
+func (ChatPresence) eventName() string         { return "chat_presence" }
+func (CallEvent) eventName() string            { return "call" }
 func (Message) eventName() string              { return "message" }
 func (UndecryptableMessage) eventName() string { return "undecryptable_message" }
 func (Receipt) eventName() string              { return "receipt" }

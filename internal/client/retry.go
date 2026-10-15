@@ -91,16 +91,33 @@ func (s *session) handleReceipt(n *wabin.Node) {
 	defer s.ackReceipt(n)
 	from, _ := n.AttrJID("from")
 	typ, _ := n.AttrString("type")
-	r := Receipt{Type: typ, Sender: from, Chat: from.ToNonAD()}
+	base := Receipt{Type: typ, Sender: from, Chat: from.ToNonAD()}
 	if p, ok := n.AttrJID("participant"); ok {
-		r.Sender = p
+		base.Sender = p
 	}
 	if rc, ok := n.AttrJID("recipient"); ok {
-		r.Chat = rc
+		base.Chat = rc
 	}
 	if t, ok := n.AttrInt("t"); ok {
-		r.Timestamp = time.Unix(t, 0)
+		base.Timestamp = time.Unix(t, 0)
 	}
+	// Aggregated group receipts: <participants key="msgid"><user jid t/>...
+	if parts := n.ChildrenByTag("participants"); len(parts) > 0 {
+		for _, p := range parts {
+			key, _ := p.AttrString("key")
+			for _, u := range p.ChildrenByTag("user") {
+				r := base
+				r.IDs = []string{key}
+				r.Sender, _ = u.AttrJID("jid")
+				if t, ok := u.AttrInt("t"); ok {
+					r.Timestamp = time.Unix(t, 0)
+				}
+				s.c.emit(r)
+			}
+		}
+		return
+	}
+	r := base
 	if id, ok := n.AttrString("id"); ok {
 		r.IDs = append(r.IDs, id)
 	}
@@ -157,8 +174,37 @@ func (s *session) handleRetryReceipt(n *wabin.Node, r *Receipt) error {
 		return errRetryNotFound
 	}
 	device := r.Sender
+	isGroup := chat.Server == wabin.ServerGroup || chat.Server == wabin.ServerBroadcast
 	isOwn := device.User == s.dev.JID.User || device.User == s.dev.LID.User
-	if isOwn {
+	if isGroup {
+		// The device lost our sender key: resend the content together with
+		// a fresh copy of the distribution message, over the 1:1 session.
+		var msg wae2e.Message
+		if err := proto.Unmarshal(plaintext, &msg); err != nil {
+			return err
+		}
+		skAddr := signalAddress(s.ownDeviceForGroups())
+		var skdm []byte
+		err := s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
+			rec, err := tx.LoadSenderKey(s.ctx, s.c.cfg.InstanceID, chat.String(), skAddr)
+			if err != nil {
+				return err
+			}
+			if skdm, err = rec.CreateDistribution(); err != nil {
+				return err
+			}
+			return tx.PutSenderKey(s.ctx, s.c.cfg.InstanceID, chat.String(), skAddr, rec)
+		})
+		if err != nil {
+			return err
+		}
+		msg.SenderKeyDistributionMessage = &wae2e.SenderKeyDistributionMessage{
+			GroupID: proto.String(chat.String()), AxolotlSenderKeyDistributionMessage: skdm,
+		}
+		if plaintext, err = proto.Marshal(&msg); err != nil {
+			return err
+		}
+	} else if isOwn {
 		var msg wae2e.Message
 		if err := proto.Unmarshal(plaintext, &msg); err != nil {
 			return err
@@ -169,25 +215,33 @@ func (s *session) handleRetryReceipt(n *wabin.Node, r *Receipt) error {
 			return err
 		}
 	}
+	// Sessions live under the LID identity when it is known.
+	encDevice := s.c.encryptionJIDs(s.ctx, []wabin.JID{device})[device]
 	var bundle *signal.PreKeyBundle
 	if _, hasKeys := n.Child("keys"); hasKeys {
+		// The receipt carries a fresh bundle from the failing device.
 		if bundle, err = parseBundle(n); err != nil {
 			return err
 		}
 	} else if count >= 2 {
-		// The sender's session is probably broken: start a fresh one.
-		bundles, err := s.fetchBundles(s.ctx, []wabin.JID{device})
+		// The device's session is probably broken: start a fresh one.
+		bundles, err := s.fetchBundles(s.ctx, []wabin.JID{encDevice})
 		if err != nil {
 			return err
 		}
-		bundle = bundles[device]
+		bundle = bundles[encDevice]
 	}
 	local := signal.LocalIdentity{Key: &s.dev.IdentityKey.KeyPair, RegistrationID: s.dev.RegistrationID}
-	enc, isPreKey, err := s.c.encryptForDevice(s.ctx, local, device, bundle, padMessage(plaintext), wabin.Attrs{"count": count})
+	var origMsg wae2e.Message
+	_ = proto.Unmarshal(plaintext, &origMsg)
+	enc, isPreKey, err := s.c.encryptForDevice(s.ctx, local, encDevice, bundle, padMessage(plaintext), wabin.Attrs{"count": count})
 	if err != nil {
 		return err
 	}
-	attrs := wabin.Attrs{"to": n.Attrs["from"], "type": "text", "id": msgID, "t": retry.Attrs["t"], "device_fanout": "false"}
+	attrs := wabin.Attrs{"to": n.Attrs["from"], "type": messageType(&origMsg), "id": msgID, "t": retry.Attrs["t"]}
+	if !isGroup {
+		attrs["device_fanout"] = "false"
+	}
 	for _, k := range []string{"participant", "recipient"} {
 		if v, ok := n.Attrs[k]; ok {
 			attrs[k] = v

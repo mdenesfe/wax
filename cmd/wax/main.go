@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -44,7 +45,11 @@ func main() {
 		qrPNG        = flag.String("qr-png", "", "also write the current QR code to this PNG file")
 		once         = flag.Bool("once", false, "exit instead of starting a new pairing after logout/QR timeout")
 		sendTo       = flag.String("send-to", "", "after connecting, send -text once to this phone number (digits) or JID (e.g. 123@lid)")
-		sendText     = flag.String("text", "", "text for -send-to")
+		sendText     = flag.String("text", "", "text for -send-to (caption with -send-file)")
+		sendFilePath = flag.String("send-file", "", "with -send-to: send this file instead of a text")
+		mediaDir     = flag.String("media-dir", "", "save received media files into this directory")
+		rejectCalls  = flag.Bool("reject-calls", false, "automatically reject incoming calls")
+		pushName     = flag.String("push-name", "", "our display name (needed for presence until app state sync)")
 	)
 	flag.Parse()
 
@@ -58,7 +63,8 @@ func main() {
 
 	if err := run(ctx, log, options{
 		instance: *instance, dumpNodes: *dumpNodes, unmask: *unmask, version: *versionFlag,
-		checkVersion: !*noVersionNet, qrPNG: *qrPNG, once: *once, sendTo: *sendTo, sendText: *sendText,
+		checkVersion: !*noVersionNet, qrPNG: *qrPNG, once: *once, sendTo: *sendTo, sendText: *sendText, sendFile: *sendFilePath,
+		mediaDir: *mediaDir, rejectCalls: *rejectCalls, pushName: *pushName,
 	}); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("exiting", "error", err)
 		os.Exit(1)
@@ -67,7 +73,9 @@ func main() {
 
 type options struct {
 	instance, version, qrPNG        string
-	sendTo, sendText                string
+	sendTo, sendText, sendFile      string
+	mediaDir, pushName              string
+	rejectCalls                     bool
 	dumpNodes, unmask, checkVersion bool
 	once                            bool
 }
@@ -109,7 +117,7 @@ func run(ctx context.Context, log *slog.Logger, o options) error {
 	go commandLoop(ctx, log, &current)
 
 	for {
-		printer := eventPrinter(log, o.qrPNG, o.unmask)
+		printer := eventPrinter(log, o.qrPNG, o.unmask, o.mediaDir, o.rejectCalls, current.Load)
 		onEvent := printer
 		if o.sendTo != "" {
 			to, err := parseRecipient(o.sendTo)
@@ -121,13 +129,17 @@ func run(ctx context.Context, log *slog.Logger, o options) error {
 				printer(e)
 				if _, ok := e.(client.Connected); ok && sent.CompareAndSwap(false, true) {
 					// Send from a separate goroutine: event handlers must not block.
-					go sendOnce(ctx, log, &current, to, o.sendText)
+					if o.sendFile != "" {
+						go sendFile(ctx, log, current.Load(), to, o.sendFile, o.sendText)
+					} else {
+						go sendOnce(ctx, log, &current, to, o.sendText)
+					}
 				}
 			}
 		}
 		cl, err := client.New(client.Config{
 			Store: st, InstanceID: o.instance, Device: client.DefaultDeviceConfig(version), Log: log,
-			OnEvent: onEvent, DumpNodes: o.dumpNodes, DumpUnmasked: o.unmask,
+			OnEvent: onEvent, DumpNodes: o.dumpNodes, DumpUnmasked: o.unmask, PushName: o.pushName,
 		})
 		if err != nil {
 			return err
@@ -147,24 +159,114 @@ func run(ctx context.Context, log *slog.Logger, o options) error {
 // commandLoop reads simple commands from stdin, for manual testing:
 //
 //	/send <phone digits> <text>
+const commandHelp = `commands:
+  /send  <phone|jid> <text>             send a text (jid may be a group: 1203...@g.us)
+  /media <phone|jid> <file> [caption]   send a file (image/video/audio/document by extension)
+  /group <group jid>                    show group info`
+
 func commandLoop(ctx context.Context, log *slog.Logger, current *atomic.Pointer[client.Client]) {
 	sc := bufio.NewScanner(os.Stdin)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if !strings.HasPrefix(line, "/send ") {
-			if line != "" {
-				fmt.Fprintln(os.Stderr, "usage: /send <phone digits> <text>")
+		if line == "" {
+			continue
+		}
+		cmd, rest, _ := strings.Cut(line, " ")
+		cl := current.Load()
+		if cl == nil {
+			fmt.Fprintln(os.Stderr, "not ready yet")
+			continue
+		}
+		switch cmd {
+		case "/send":
+			to, text, ok := strings.Cut(strings.TrimSpace(rest), " ")
+			rcpt, err := parseRecipient(to)
+			if !ok || err != nil || strings.TrimSpace(text) == "" {
+				fmt.Fprintln(os.Stderr, commandHelp)
+				continue
 			}
-			continue
+			sendOnce(ctx, log, current, rcpt, text)
+		case "/media":
+			parts := strings.SplitN(strings.TrimSpace(rest), " ", 3)
+			if len(parts) < 2 {
+				fmt.Fprintln(os.Stderr, commandHelp)
+				continue
+			}
+			rcpt, err := parseRecipient(parts[0])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			caption := ""
+			if len(parts) == 3 {
+				caption = parts[2]
+			}
+			sendFile(ctx, log, cl, rcpt, parts[1], caption)
+		case "/group":
+			g, err := parseRecipient(strings.TrimSpace(rest))
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			gctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			gi, err := cl.GetGroupInfo(gctx, g)
+			cancel()
+			if err != nil {
+				log.Error("group info failed", "error", err)
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "group %q addressing=%s participants=%d\n", gi.Name, gi.AddressingMode, len(gi.Participants))
+		default:
+			fmt.Fprintln(os.Stderr, commandHelp)
 		}
-		num, text, ok := strings.Cut(strings.TrimPrefix(line, "/send "), " ")
-		num = strings.TrimLeft(strings.TrimSpace(num), "+")
-		if !ok || num == "" || strings.Trim(num, "0123456789") != "" || strings.TrimSpace(text) == "" {
-			fmt.Fprintln(os.Stderr, "usage: /send <phone digits> <text>")
-			continue
-		}
-		sendOnce(ctx, log, current, binary.JID{User: num, Server: binary.ServerUser}, text)
 	}
+}
+
+func sendFile(ctx context.Context, log *slog.Logger, cl *client.Client, to binary.JID, path, caption string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		log.Error("read file", "error", err)
+		return
+	}
+	mime := http.DetectContentType(data)
+	if byExt := mimeByExt(path); byExt != "" {
+		mime = byExt
+	}
+	kind := client.KindDocument
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		kind = client.KindImage
+	case strings.HasPrefix(mime, "video/"):
+		kind = client.KindVideo
+	case strings.HasPrefix(mime, "audio/"):
+		kind = client.KindAudio
+	}
+	sctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	res, err := cl.SendMedia(sctx, to, client.SendMediaRequest{Kind: kind, Data: data, MimeType: mime, Caption: caption, FileName: filepath.Base(path)})
+	if err != nil {
+		log.Error("send media failed", "error", err)
+		return
+	}
+	log.Info("sent media", "id", res.ID, "mime", mime, "bytes", len(data))
+}
+
+func mimeByExt(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".mp4":
+		return "video/mp4"
+	case ".ogg", ".opus":
+		return "audio/ogg; codecs=opus"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".pdf":
+		return "application/pdf"
+	}
+	return ""
 }
 
 // parseRecipient accepts phone digits (optionally with +) or a full JID.
@@ -207,11 +309,43 @@ func messageText(m *wae2e.Message) string {
 		return m.GetExtendedTextMessage().GetText()
 	case m.GetProtocolMessage() != nil:
 		return "[protocol message: " + m.GetProtocolMessage().GetType().String() + "]"
+	case m.GetImageMessage() != nil:
+		return "[image] " + m.GetImageMessage().GetCaption()
+	case m.GetVideoMessage() != nil:
+		return "[video] " + m.GetVideoMessage().GetCaption()
+	case m.GetAudioMessage() != nil:
+		return "[audio]"
+	case m.GetDocumentMessage() != nil:
+		return "[document " + m.GetDocumentMessage().GetFileName() + "]"
+	case m.GetStickerMessage() != nil:
+		return "[sticker]"
+	case m.GetReactionMessage() != nil:
+		return "[reaction " + m.GetReactionMessage().GetText() + "]"
 	}
 	return "[non-text message]"
 }
 
-func eventPrinter(log *slog.Logger, pngPath string, unmask bool) func(client.Event) {
+// saveMedia downloads a received media message into dir.
+func saveMedia(log *slog.Logger, cl *client.Client, dir string, e client.Message) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	data, err := cl.Download(ctx, e.Message)
+	if errors.Is(err, client.ErrNoMedia) {
+		return
+	}
+	if err != nil {
+		log.Error("media download failed", "id", e.Info.ID, "error", err)
+		return
+	}
+	path := filepath.Join(dir, e.Info.ID)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		log.Error("save media", "error", err)
+		return
+	}
+	log.Info("media saved", "path", path, "bytes", len(data))
+}
+
+func eventPrinter(log *slog.Logger, pngPath string, unmask bool, mediaDir string, rejectCalls bool, getClient func() *client.Client) func(client.Event) {
 	jid := func(j binary.JID) string {
 		if unmask {
 			return j.String()
@@ -225,7 +359,35 @@ func eventPrinter(log *slog.Logger, pngPath string, unmask bool) func(client.Eve
 			if e.Info.IsFromMe {
 				dir = "sent by me (other device) in"
 			}
-			fmt.Fprintf(os.Stderr, "\n>>> message %s %s (%s) id=%s: %s\n\n", dir, jid(e.Info.Chat), e.Info.PushName, e.Info.ID, messageText(e.Message))
+			where := jid(e.Info.Chat)
+			if e.Info.IsGroup {
+				where += " by " + jid(e.Info.Sender)
+			}
+			fmt.Fprintf(os.Stderr, "\n>>> message %s %s (%s) id=%s: %s\n\n", dir, where, e.Info.PushName, e.Info.ID, messageText(e.Message))
+			if mediaDir != "" && getClient != nil {
+				if cl := getClient(); cl != nil {
+					go saveMedia(log, cl, mediaDir, e)
+				}
+			}
+		case client.CallEvent:
+			log.Info("call", "type", e.Type, "from", jid(e.From), "call_id", e.CallID, "video", e.Video)
+			if e.Type == "offer" && rejectCalls && getClient != nil {
+				if cl := getClient(); cl != nil {
+					go func() {
+						if err := cl.RejectCall(context.Background(), e.Creator, e.CallID); err != nil {
+							log.Error("reject call failed", "error", err)
+						} else {
+							log.Info("call rejected", "call_id", e.CallID)
+						}
+					}()
+				}
+			}
+		case client.GroupUpdate:
+			log.Info("group update", "group", jid(e.JID), "changes", e.Changes)
+		case client.Presence:
+			log.Info("presence", "from", jid(e.From), "available", e.Available, "last_seen", e.LastSeen)
+		case client.ChatPresence:
+			log.Info("chat presence", "chat", jid(e.Chat), "state", e.State)
 		case client.UndecryptableMessage:
 			log.Warn("undecryptable message (retry requested)", "id", e.Info.ID, "error", e.Err)
 		case client.Receipt:

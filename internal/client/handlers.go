@@ -36,10 +36,11 @@ func (s *session) handleNode(n *binary.Node) {
 	case "receipt":
 		s.handleReceipt(n)
 	case "call":
-		s.deferStanza(n, "calls not implemented yet")
-	case "presence", "chatstate":
-		// Ephemeral, not queued by the server, no ack expected.
-		s.log.Debug("ignoring ephemeral stanza", "tag", n.Tag)
+		s.handleCall(n)
+	case "presence":
+		s.handlePresence(n)
+	case "chatstate":
+		s.handleChatState(n)
 	default:
 		s.log.Debug("ignoring unknown node", "tag", n.Tag)
 	}
@@ -199,6 +200,8 @@ func (s *session) handleSuccess(n *binary.Node) {
 	}
 	s.loggedInAt = time.Now()
 	s.log.Info("logged in")
+	// Old stanzas first, before anything new from the server is handled.
+	s.replayDeferred()
 	if !s.dev.LID.IsEmpty() {
 		s.c.learnLID(s.ctx, s.dev.JID.ToNonAD(), s.dev.LID.ToNonAD())
 	}
@@ -269,6 +272,9 @@ func (s *session) handleNotification(n *binary.Node) {
 		}
 	}
 	switch typ {
+	case "w:gp2":
+		s.handleGroupNotification(n)
+		return
 	case "devices":
 		// A user added or removed a device: drop the cached list.
 		s.c.devCache.invalidate(from)
@@ -296,6 +302,10 @@ func (s *session) handleNotification(n *binary.Node) {
 // option: the server delivers its offline queue in windows and stops at
 // unacknowledged stanzas, which would also hold back messages we can handle.
 func (s *session) deferStanza(n *binary.Node, reason string) {
+	if s.replaying {
+		s.redeferred = true // already stored (and acked); keep the row
+		return
+	}
 	id, _ := n.AttrString("id")
 	raw, err := binary.Marshal(*n)
 	if err == nil {
@@ -310,7 +320,11 @@ func (s *session) deferStanza(n *binary.Node, reason string) {
 }
 
 // ack acknowledges a stanza so the server removes it from our queue.
+// Replayed stanzas were acknowledged when they were deferred.
 func (s *session) ack(n *binary.Node) {
+	if s.replaying {
+		return
+	}
 	attrs := binary.Attrs{"class": n.Tag, "id": n.Attrs["id"], "to": n.Attrs["from"]}
 	for _, k := range []string{"participant", "recipient"} {
 		if v, ok := n.Attrs[k]; ok {

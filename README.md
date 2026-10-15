@@ -14,7 +14,7 @@ standard library only (`crypto/ecdh`, `crypto/ed25519`, `crypto/aes`,
 | 1 | Transport, Noise handshake, binary nodes | ✅ done |
 | 2 | QR pairing, persistent identity (PostgreSQL) | ✅ done |
 | 3 | Signal protocol, 1:1 text messages | ✅ done |
-| 4 | Groups, media, receipts, presence, calls | — |
+| 4 | Groups, media, receipts, presence, calls | ✅ done |
 | 5 | History sync, app state sync | — |
 | 6 | Multi-instance, REST API, webhooks, queue | — |
 
@@ -24,7 +24,8 @@ standard library only (`crypto/ecdh`, `crypto/ed25519`, `crypto/aes`,
 cmd/wax             runs one linked-device instance (QR pairing, reconnects)
 cmd/wax-probe       Phase 1 tool: raw handshake + node logging
 internal/keys        X25519 key pairs, libsignal-compatible Curve25519 signatures
-internal/signal      Signal protocol v3: X3DH, Double Ratchet, wire formats (pure, no I/O)
+internal/signal      Signal protocol v3: X3DH, Double Ratchet, Sender Keys, wire formats (pure, no I/O)
+internal/media       media encryption (HKDF keys, AES-CBC + HMAC), upload/download
 internal/transport   framing, WebSocket, Noise XX handshake, cert chain, encrypted conn
 internal/binary      binary XML nodes: tokens, JIDs, encoder/decoder, masked formatting
 internal/proto       protobuf schemas + generated code (see internal/proto/README.md)
@@ -53,7 +54,10 @@ go run ./cmd/wax -instance test           # shows a QR code on first start
 After pairing, restarting the same command logs in without a QR code.
 Useful flags: `-debug -dump-nodes` (masked node log), `-qr-png qr.png`,
 `-version 2.3000.X`, `-send-to <number|jid> -text <text>` (send once after
-connecting). While running, `/send <number> <text>` on stdin sends a message.
+connecting; add `-send-file <path>` to send a file), `-media-dir <dir>` (save
+received media), `-reject-calls`, `-push-name <name>`. While running, stdin
+accepts `/send <number|jid> <text>`, `/media <number|jid> <file> [caption]`
+and `/group <jid>`.
 
 `WAX_MASTER_KEY` encrypts all private keys at rest. Keep it outside the
 database backups; losing it means re-pairing every instance.

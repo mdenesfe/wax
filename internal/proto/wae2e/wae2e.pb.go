@@ -196,12 +196,18 @@ type Message struct {
 	state                        protoimpl.MessageState        `protogen:"open.v1"`
 	Conversation                 *string                       `protobuf:"bytes,1,opt,name=conversation" json:"conversation,omitempty"`
 	SenderKeyDistributionMessage *SenderKeyDistributionMessage `protobuf:"bytes,2,opt,name=senderKeyDistributionMessage" json:"senderKeyDistributionMessage,omitempty"`
+	ImageMessage                 *ImageMessage                 `protobuf:"bytes,3,opt,name=imageMessage" json:"imageMessage,omitempty"`
 	ExtendedTextMessage          *ExtendedTextMessage          `protobuf:"bytes,6,opt,name=extendedTextMessage" json:"extendedTextMessage,omitempty"`
+	DocumentMessage              *DocumentMessage              `protobuf:"bytes,7,opt,name=documentMessage" json:"documentMessage,omitempty"`
+	AudioMessage                 *AudioMessage                 `protobuf:"bytes,8,opt,name=audioMessage" json:"audioMessage,omitempty"`
+	VideoMessage                 *VideoMessage                 `protobuf:"bytes,9,opt,name=videoMessage" json:"videoMessage,omitempty"`
 	ProtocolMessage              *ProtocolMessage              `protobuf:"bytes,12,opt,name=protocolMessage" json:"protocolMessage,omitempty"`
+	StickerMessage               *StickerMessage               `protobuf:"bytes,26,opt,name=stickerMessage" json:"stickerMessage,omitempty"`
 	DeviceSentMessage            *DeviceSentMessage            `protobuf:"bytes,31,opt,name=deviceSentMessage" json:"deviceSentMessage,omitempty"`
 	MessageContextInfo           *MessageContextInfo           `protobuf:"bytes,35,opt,name=messageContextInfo" json:"messageContextInfo,omitempty"`
 	ViewOnceMessage              *FutureProofMessage           `protobuf:"bytes,37,opt,name=viewOnceMessage" json:"viewOnceMessage,omitempty"`
 	EphemeralMessage             *FutureProofMessage           `protobuf:"bytes,40,opt,name=ephemeralMessage" json:"ephemeralMessage,omitempty"`
+	ReactionMessage              *ReactionMessage              `protobuf:"bytes,46,opt,name=reactionMessage" json:"reactionMessage,omitempty"`
 	DocumentWithCaptionMessage   *FutureProofMessage           `protobuf:"bytes,53,opt,name=documentWithCaptionMessage" json:"documentWithCaptionMessage,omitempty"`
 	ViewOnceMessageV2            *FutureProofMessage           `protobuf:"bytes,55,opt,name=viewOnceMessageV2" json:"viewOnceMessageV2,omitempty"`
 	EditedMessage                *FutureProofMessage           `protobuf:"bytes,58,opt,name=editedMessage" json:"editedMessage,omitempty"`
@@ -254,6 +260,13 @@ func (x *Message) GetSenderKeyDistributionMessage() *SenderKeyDistributionMessag
 	return nil
 }
 
+func (x *Message) GetImageMessage() *ImageMessage {
+	if x != nil {
+		return x.ImageMessage
+	}
+	return nil
+}
+
 func (x *Message) GetExtendedTextMessage() *ExtendedTextMessage {
 	if x != nil {
 		return x.ExtendedTextMessage
@@ -261,9 +274,37 @@ func (x *Message) GetExtendedTextMessage() *ExtendedTextMessage {
 	return nil
 }
 
+func (x *Message) GetDocumentMessage() *DocumentMessage {
+	if x != nil {
+		return x.DocumentMessage
+	}
+	return nil
+}
+
+func (x *Message) GetAudioMessage() *AudioMessage {
+	if x != nil {
+		return x.AudioMessage
+	}
+	return nil
+}
+
+func (x *Message) GetVideoMessage() *VideoMessage {
+	if x != nil {
+		return x.VideoMessage
+	}
+	return nil
+}
+
 func (x *Message) GetProtocolMessage() *ProtocolMessage {
 	if x != nil {
 		return x.ProtocolMessage
+	}
+	return nil
+}
+
+func (x *Message) GetStickerMessage() *StickerMessage {
+	if x != nil {
+		return x.StickerMessage
 	}
 	return nil
 }
@@ -292,6 +333,13 @@ func (x *Message) GetViewOnceMessage() *FutureProofMessage {
 func (x *Message) GetEphemeralMessage() *FutureProofMessage {
 	if x != nil {
 		return x.EphemeralMessage
+	}
+	return nil
+}
+
+func (x *Message) GetReactionMessage() *ReactionMessage {
+	if x != nil {
+		return x.ReactionMessage
 	}
 	return nil
 }
@@ -768,6 +816,800 @@ func (x *ProtocolMessage) GetTimestampMS() int64 {
 	return 0
 }
 
+// Media messages. Field numbers differ between the types; they are copied
+// from WhatsApp Web exactly.
+type ImageMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	URL               *string                `protobuf:"bytes,1,opt,name=URL" json:"URL,omitempty"`
+	Mimetype          *string                `protobuf:"bytes,2,opt,name=mimetype" json:"mimetype,omitempty"`
+	Caption           *string                `protobuf:"bytes,3,opt,name=caption" json:"caption,omitempty"`
+	FileSHA256        []byte                 `protobuf:"bytes,4,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileLength        *uint64                `protobuf:"varint,5,opt,name=fileLength" json:"fileLength,omitempty"`
+	Height            *uint32                `protobuf:"varint,6,opt,name=height" json:"height,omitempty"`
+	Width             *uint32                `protobuf:"varint,7,opt,name=width" json:"width,omitempty"`
+	MediaKey          []byte                 `protobuf:"bytes,8,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	FileEncSHA256     []byte                 `protobuf:"bytes,9,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	DirectPath        *string                `protobuf:"bytes,11,opt,name=directPath" json:"directPath,omitempty"`
+	MediaKeyTimestamp *int64                 `protobuf:"varint,12,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
+	JPEGThumbnail     []byte                 `protobuf:"bytes,16,opt,name=JPEGThumbnail" json:"JPEGThumbnail,omitempty"`
+	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	ViewOnce          *bool                  `protobuf:"varint,25,opt,name=viewOnce" json:"viewOnce,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ImageMessage) Reset() {
+	*x = ImageMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImageMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImageMessage) ProtoMessage() {}
+
+func (x *ImageMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImageMessage.ProtoReflect.Descriptor instead.
+func (*ImageMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ImageMessage) GetURL() string {
+	if x != nil && x.URL != nil {
+		return *x.URL
+	}
+	return ""
+}
+
+func (x *ImageMessage) GetMimetype() string {
+	if x != nil && x.Mimetype != nil {
+		return *x.Mimetype
+	}
+	return ""
+}
+
+func (x *ImageMessage) GetCaption() string {
+	if x != nil && x.Caption != nil {
+		return *x.Caption
+	}
+	return ""
+}
+
+func (x *ImageMessage) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *ImageMessage) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *ImageMessage) GetHeight() uint32 {
+	if x != nil && x.Height != nil {
+		return *x.Height
+	}
+	return 0
+}
+
+func (x *ImageMessage) GetWidth() uint32 {
+	if x != nil && x.Width != nil {
+		return *x.Width
+	}
+	return 0
+}
+
+func (x *ImageMessage) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *ImageMessage) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *ImageMessage) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *ImageMessage) GetMediaKeyTimestamp() int64 {
+	if x != nil && x.MediaKeyTimestamp != nil {
+		return *x.MediaKeyTimestamp
+	}
+	return 0
+}
+
+func (x *ImageMessage) GetJPEGThumbnail() []byte {
+	if x != nil {
+		return x.JPEGThumbnail
+	}
+	return nil
+}
+
+func (x *ImageMessage) GetContextInfo() *ContextInfo {
+	if x != nil {
+		return x.ContextInfo
+	}
+	return nil
+}
+
+func (x *ImageMessage) GetViewOnce() bool {
+	if x != nil && x.ViewOnce != nil {
+		return *x.ViewOnce
+	}
+	return false
+}
+
+type VideoMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	URL               *string                `protobuf:"bytes,1,opt,name=URL" json:"URL,omitempty"`
+	Mimetype          *string                `protobuf:"bytes,2,opt,name=mimetype" json:"mimetype,omitempty"`
+	FileSHA256        []byte                 `protobuf:"bytes,3,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileLength        *uint64                `protobuf:"varint,4,opt,name=fileLength" json:"fileLength,omitempty"`
+	Seconds           *uint32                `protobuf:"varint,5,opt,name=seconds" json:"seconds,omitempty"`
+	MediaKey          []byte                 `protobuf:"bytes,6,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	Caption           *string                `protobuf:"bytes,7,opt,name=caption" json:"caption,omitempty"`
+	GifPlayback       *bool                  `protobuf:"varint,8,opt,name=gifPlayback" json:"gifPlayback,omitempty"`
+	Height            *uint32                `protobuf:"varint,9,opt,name=height" json:"height,omitempty"`
+	Width             *uint32                `protobuf:"varint,10,opt,name=width" json:"width,omitempty"`
+	FileEncSHA256     []byte                 `protobuf:"bytes,11,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	DirectPath        *string                `protobuf:"bytes,13,opt,name=directPath" json:"directPath,omitempty"`
+	MediaKeyTimestamp *int64                 `protobuf:"varint,14,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
+	JPEGThumbnail     []byte                 `protobuf:"bytes,16,opt,name=JPEGThumbnail" json:"JPEGThumbnail,omitempty"`
+	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	ViewOnce          *bool                  `protobuf:"varint,20,opt,name=viewOnce" json:"viewOnce,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *VideoMessage) Reset() {
+	*x = VideoMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VideoMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VideoMessage) ProtoMessage() {}
+
+func (x *VideoMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VideoMessage.ProtoReflect.Descriptor instead.
+func (*VideoMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *VideoMessage) GetURL() string {
+	if x != nil && x.URL != nil {
+		return *x.URL
+	}
+	return ""
+}
+
+func (x *VideoMessage) GetMimetype() string {
+	if x != nil && x.Mimetype != nil {
+		return *x.Mimetype
+	}
+	return ""
+}
+
+func (x *VideoMessage) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *VideoMessage) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *VideoMessage) GetSeconds() uint32 {
+	if x != nil && x.Seconds != nil {
+		return *x.Seconds
+	}
+	return 0
+}
+
+func (x *VideoMessage) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *VideoMessage) GetCaption() string {
+	if x != nil && x.Caption != nil {
+		return *x.Caption
+	}
+	return ""
+}
+
+func (x *VideoMessage) GetGifPlayback() bool {
+	if x != nil && x.GifPlayback != nil {
+		return *x.GifPlayback
+	}
+	return false
+}
+
+func (x *VideoMessage) GetHeight() uint32 {
+	if x != nil && x.Height != nil {
+		return *x.Height
+	}
+	return 0
+}
+
+func (x *VideoMessage) GetWidth() uint32 {
+	if x != nil && x.Width != nil {
+		return *x.Width
+	}
+	return 0
+}
+
+func (x *VideoMessage) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *VideoMessage) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *VideoMessage) GetMediaKeyTimestamp() int64 {
+	if x != nil && x.MediaKeyTimestamp != nil {
+		return *x.MediaKeyTimestamp
+	}
+	return 0
+}
+
+func (x *VideoMessage) GetJPEGThumbnail() []byte {
+	if x != nil {
+		return x.JPEGThumbnail
+	}
+	return nil
+}
+
+func (x *VideoMessage) GetContextInfo() *ContextInfo {
+	if x != nil {
+		return x.ContextInfo
+	}
+	return nil
+}
+
+func (x *VideoMessage) GetViewOnce() bool {
+	if x != nil && x.ViewOnce != nil {
+		return *x.ViewOnce
+	}
+	return false
+}
+
+type AudioMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	URL               *string                `protobuf:"bytes,1,opt,name=URL" json:"URL,omitempty"`
+	Mimetype          *string                `protobuf:"bytes,2,opt,name=mimetype" json:"mimetype,omitempty"`
+	FileSHA256        []byte                 `protobuf:"bytes,3,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileLength        *uint64                `protobuf:"varint,4,opt,name=fileLength" json:"fileLength,omitempty"`
+	Seconds           *uint32                `protobuf:"varint,5,opt,name=seconds" json:"seconds,omitempty"`
+	PTT               *bool                  `protobuf:"varint,6,opt,name=PTT" json:"PTT,omitempty"`
+	MediaKey          []byte                 `protobuf:"bytes,7,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	FileEncSHA256     []byte                 `protobuf:"bytes,8,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	DirectPath        *string                `protobuf:"bytes,9,opt,name=directPath" json:"directPath,omitempty"`
+	MediaKeyTimestamp *int64                 `protobuf:"varint,10,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
+	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	Waveform          []byte                 `protobuf:"bytes,19,opt,name=waveform" json:"waveform,omitempty"`
+	ViewOnce          *bool                  `protobuf:"varint,21,opt,name=viewOnce" json:"viewOnce,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *AudioMessage) Reset() {
+	*x = AudioMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AudioMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AudioMessage) ProtoMessage() {}
+
+func (x *AudioMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AudioMessage.ProtoReflect.Descriptor instead.
+func (*AudioMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *AudioMessage) GetURL() string {
+	if x != nil && x.URL != nil {
+		return *x.URL
+	}
+	return ""
+}
+
+func (x *AudioMessage) GetMimetype() string {
+	if x != nil && x.Mimetype != nil {
+		return *x.Mimetype
+	}
+	return ""
+}
+
+func (x *AudioMessage) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *AudioMessage) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *AudioMessage) GetSeconds() uint32 {
+	if x != nil && x.Seconds != nil {
+		return *x.Seconds
+	}
+	return 0
+}
+
+func (x *AudioMessage) GetPTT() bool {
+	if x != nil && x.PTT != nil {
+		return *x.PTT
+	}
+	return false
+}
+
+func (x *AudioMessage) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *AudioMessage) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *AudioMessage) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *AudioMessage) GetMediaKeyTimestamp() int64 {
+	if x != nil && x.MediaKeyTimestamp != nil {
+		return *x.MediaKeyTimestamp
+	}
+	return 0
+}
+
+func (x *AudioMessage) GetContextInfo() *ContextInfo {
+	if x != nil {
+		return x.ContextInfo
+	}
+	return nil
+}
+
+func (x *AudioMessage) GetWaveform() []byte {
+	if x != nil {
+		return x.Waveform
+	}
+	return nil
+}
+
+func (x *AudioMessage) GetViewOnce() bool {
+	if x != nil && x.ViewOnce != nil {
+		return *x.ViewOnce
+	}
+	return false
+}
+
+type DocumentMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	URL               *string                `protobuf:"bytes,1,opt,name=URL" json:"URL,omitempty"`
+	Mimetype          *string                `protobuf:"bytes,2,opt,name=mimetype" json:"mimetype,omitempty"`
+	Title             *string                `protobuf:"bytes,3,opt,name=title" json:"title,omitempty"`
+	FileSHA256        []byte                 `protobuf:"bytes,4,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileLength        *uint64                `protobuf:"varint,5,opt,name=fileLength" json:"fileLength,omitempty"`
+	PageCount         *uint32                `protobuf:"varint,6,opt,name=pageCount" json:"pageCount,omitempty"`
+	MediaKey          []byte                 `protobuf:"bytes,7,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	FileName          *string                `protobuf:"bytes,8,opt,name=fileName" json:"fileName,omitempty"`
+	FileEncSHA256     []byte                 `protobuf:"bytes,9,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	DirectPath        *string                `protobuf:"bytes,10,opt,name=directPath" json:"directPath,omitempty"`
+	MediaKeyTimestamp *int64                 `protobuf:"varint,11,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
+	JPEGThumbnail     []byte                 `protobuf:"bytes,16,opt,name=JPEGThumbnail" json:"JPEGThumbnail,omitempty"`
+	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	Caption           *string                `protobuf:"bytes,20,opt,name=caption" json:"caption,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *DocumentMessage) Reset() {
+	*x = DocumentMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DocumentMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DocumentMessage) ProtoMessage() {}
+
+func (x *DocumentMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DocumentMessage.ProtoReflect.Descriptor instead.
+func (*DocumentMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DocumentMessage) GetURL() string {
+	if x != nil && x.URL != nil {
+		return *x.URL
+	}
+	return ""
+}
+
+func (x *DocumentMessage) GetMimetype() string {
+	if x != nil && x.Mimetype != nil {
+		return *x.Mimetype
+	}
+	return ""
+}
+
+func (x *DocumentMessage) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *DocumentMessage) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *DocumentMessage) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *DocumentMessage) GetPageCount() uint32 {
+	if x != nil && x.PageCount != nil {
+		return *x.PageCount
+	}
+	return 0
+}
+
+func (x *DocumentMessage) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *DocumentMessage) GetFileName() string {
+	if x != nil && x.FileName != nil {
+		return *x.FileName
+	}
+	return ""
+}
+
+func (x *DocumentMessage) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *DocumentMessage) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *DocumentMessage) GetMediaKeyTimestamp() int64 {
+	if x != nil && x.MediaKeyTimestamp != nil {
+		return *x.MediaKeyTimestamp
+	}
+	return 0
+}
+
+func (x *DocumentMessage) GetJPEGThumbnail() []byte {
+	if x != nil {
+		return x.JPEGThumbnail
+	}
+	return nil
+}
+
+func (x *DocumentMessage) GetContextInfo() *ContextInfo {
+	if x != nil {
+		return x.ContextInfo
+	}
+	return nil
+}
+
+func (x *DocumentMessage) GetCaption() string {
+	if x != nil && x.Caption != nil {
+		return *x.Caption
+	}
+	return ""
+}
+
+type StickerMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	URL               *string                `protobuf:"bytes,1,opt,name=URL" json:"URL,omitempty"`
+	FileSHA256        []byte                 `protobuf:"bytes,2,opt,name=fileSHA256" json:"fileSHA256,omitempty"`
+	FileEncSHA256     []byte                 `protobuf:"bytes,3,opt,name=fileEncSHA256" json:"fileEncSHA256,omitempty"`
+	MediaKey          []byte                 `protobuf:"bytes,4,opt,name=mediaKey" json:"mediaKey,omitempty"`
+	Mimetype          *string                `protobuf:"bytes,5,opt,name=mimetype" json:"mimetype,omitempty"`
+	Height            *uint32                `protobuf:"varint,6,opt,name=height" json:"height,omitempty"`
+	Width             *uint32                `protobuf:"varint,7,opt,name=width" json:"width,omitempty"`
+	DirectPath        *string                `protobuf:"bytes,8,opt,name=directPath" json:"directPath,omitempty"`
+	FileLength        *uint64                `protobuf:"varint,9,opt,name=fileLength" json:"fileLength,omitempty"`
+	MediaKeyTimestamp *int64                 `protobuf:"varint,10,opt,name=mediaKeyTimestamp" json:"mediaKeyTimestamp,omitempty"`
+	IsAnimated        *bool                  `protobuf:"varint,13,opt,name=isAnimated" json:"isAnimated,omitempty"`
+	ContextInfo       *ContextInfo           `protobuf:"bytes,17,opt,name=contextInfo" json:"contextInfo,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *StickerMessage) Reset() {
+	*x = StickerMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StickerMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StickerMessage) ProtoMessage() {}
+
+func (x *StickerMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StickerMessage.ProtoReflect.Descriptor instead.
+func (*StickerMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *StickerMessage) GetURL() string {
+	if x != nil && x.URL != nil {
+		return *x.URL
+	}
+	return ""
+}
+
+func (x *StickerMessage) GetFileSHA256() []byte {
+	if x != nil {
+		return x.FileSHA256
+	}
+	return nil
+}
+
+func (x *StickerMessage) GetFileEncSHA256() []byte {
+	if x != nil {
+		return x.FileEncSHA256
+	}
+	return nil
+}
+
+func (x *StickerMessage) GetMediaKey() []byte {
+	if x != nil {
+		return x.MediaKey
+	}
+	return nil
+}
+
+func (x *StickerMessage) GetMimetype() string {
+	if x != nil && x.Mimetype != nil {
+		return *x.Mimetype
+	}
+	return ""
+}
+
+func (x *StickerMessage) GetHeight() uint32 {
+	if x != nil && x.Height != nil {
+		return *x.Height
+	}
+	return 0
+}
+
+func (x *StickerMessage) GetWidth() uint32 {
+	if x != nil && x.Width != nil {
+		return *x.Width
+	}
+	return 0
+}
+
+func (x *StickerMessage) GetDirectPath() string {
+	if x != nil && x.DirectPath != nil {
+		return *x.DirectPath
+	}
+	return ""
+}
+
+func (x *StickerMessage) GetFileLength() uint64 {
+	if x != nil && x.FileLength != nil {
+		return *x.FileLength
+	}
+	return 0
+}
+
+func (x *StickerMessage) GetMediaKeyTimestamp() int64 {
+	if x != nil && x.MediaKeyTimestamp != nil {
+		return *x.MediaKeyTimestamp
+	}
+	return 0
+}
+
+func (x *StickerMessage) GetIsAnimated() bool {
+	if x != nil && x.IsAnimated != nil {
+		return *x.IsAnimated
+	}
+	return false
+}
+
+func (x *StickerMessage) GetContextInfo() *ContextInfo {
+	if x != nil {
+		return x.ContextInfo
+	}
+	return nil
+}
+
+type ReactionMessage struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Key               *MessageKey            `protobuf:"bytes,1,opt,name=key" json:"key,omitempty"`
+	Text              *string                `protobuf:"bytes,2,opt,name=text" json:"text,omitempty"`
+	SenderTimestampMS *int64                 `protobuf:"varint,4,opt,name=senderTimestampMS" json:"senderTimestampMS,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReactionMessage) Reset() {
+	*x = ReactionMessage{}
+	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReactionMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReactionMessage) ProtoMessage() {}
+
+func (x *ReactionMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_wae2e_wae2e_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReactionMessage.ProtoReflect.Descriptor instead.
+func (*ReactionMessage) Descriptor() ([]byte, []int) {
+	return file_wae2e_wae2e_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ReactionMessage) GetKey() *MessageKey {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *ReactionMessage) GetText() string {
+	if x != nil && x.Text != nil {
+		return *x.Text
+	}
+	return ""
+}
+
+func (x *ReactionMessage) GetSenderTimestampMS() int64 {
+	if x != nil && x.SenderTimestampMS != nil {
+		return *x.SenderTimestampMS
+	}
+	return 0
+}
+
 var File_wae2e_wae2e_proto protoreflect.FileDescriptor
 
 const file_wae2e_wae2e_proto_rawDesc = "" +
@@ -778,16 +1620,23 @@ const file_wae2e_wae2e_proto_rawDesc = "" +
 	"\tremoteJID\x18\x01 \x01(\tR\tremoteJID\x12\x16\n" +
 	"\x06fromMe\x18\x02 \x01(\bR\x06fromMe\x12\x0e\n" +
 	"\x02ID\x18\x03 \x01(\tR\x02ID\x12 \n" +
-	"\vparticipant\x18\x04 \x01(\tR\vparticipant\"\xb1\a\n" +
+	"\vparticipant\x18\x04 \x01(\tR\vparticipant\"\xb7\n" +
+	"\n" +
 	"\aMessage\x12\"\n" +
 	"\fconversation\x18\x01 \x01(\tR\fconversation\x12k\n" +
-	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v2'.wax.wae2e.SenderKeyDistributionMessageR\x1csenderKeyDistributionMessage\x12P\n" +
+	"\x1csenderKeyDistributionMessage\x18\x02 \x01(\v2'.wax.wae2e.SenderKeyDistributionMessageR\x1csenderKeyDistributionMessage\x12;\n" +
+	"\fimageMessage\x18\x03 \x01(\v2\x17.wax.wae2e.ImageMessageR\fimageMessage\x12P\n" +
 	"\x13extendedTextMessage\x18\x06 \x01(\v2\x1e.wax.wae2e.ExtendedTextMessageR\x13extendedTextMessage\x12D\n" +
-	"\x0fprotocolMessage\x18\f \x01(\v2\x1a.wax.wae2e.ProtocolMessageR\x0fprotocolMessage\x12J\n" +
+	"\x0fdocumentMessage\x18\a \x01(\v2\x1a.wax.wae2e.DocumentMessageR\x0fdocumentMessage\x12;\n" +
+	"\faudioMessage\x18\b \x01(\v2\x17.wax.wae2e.AudioMessageR\faudioMessage\x12;\n" +
+	"\fvideoMessage\x18\t \x01(\v2\x17.wax.wae2e.VideoMessageR\fvideoMessage\x12D\n" +
+	"\x0fprotocolMessage\x18\f \x01(\v2\x1a.wax.wae2e.ProtocolMessageR\x0fprotocolMessage\x12A\n" +
+	"\x0estickerMessage\x18\x1a \x01(\v2\x19.wax.wae2e.StickerMessageR\x0estickerMessage\x12J\n" +
 	"\x11deviceSentMessage\x18\x1f \x01(\v2\x1c.wax.wae2e.DeviceSentMessageR\x11deviceSentMessage\x12M\n" +
 	"\x12messageContextInfo\x18# \x01(\v2\x1d.wax.wae2e.MessageContextInfoR\x12messageContextInfo\x12G\n" +
 	"\x0fviewOnceMessage\x18% \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\x0fviewOnceMessage\x12I\n" +
-	"\x10ephemeralMessage\x18( \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\x10ephemeralMessage\x12]\n" +
+	"\x10ephemeralMessage\x18( \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\x10ephemeralMessage\x12D\n" +
+	"\x0freactionMessage\x18. \x01(\v2\x1a.wax.wae2e.ReactionMessageR\x0freactionMessage\x12]\n" +
 	"\x1adocumentWithCaptionMessage\x185 \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\x1adocumentWithCaptionMessage\x12K\n" +
 	"\x11viewOnceMessageV2\x187 \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\x11viewOnceMessageV2\x12C\n" +
 	"\reditedMessage\x18: \x01(\v2\x1d.wax.wae2e.FutureProofMessageR\reditedMessage\x12]\n" +
@@ -840,7 +1689,121 @@ const file_wae2e_wae2e_proto_rawDesc = "" +
 	"\fMESSAGE_EDIT\x10\x0e\x12'\n" +
 	"#PEER_DATA_OPERATION_REQUEST_MESSAGE\x10\x10\x120\n" +
 	",PEER_DATA_OPERATION_REQUEST_RESPONSE_MESSAGE\x10\x11\x12\x1e\n" +
-	"\x1aLID_MIGRATION_MAPPING_SYNC\x10\x16B.Z,github.com/mdenesfe/wax/internal/proto/wae2e"
+	"\x1aLID_MIGRATION_MAPPING_SYNC\x10\x16\"\xd0\x03\n" +
+	"\fImageMessage\x12\x10\n" +
+	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1a\n" +
+	"\bmimetype\x18\x02 \x01(\tR\bmimetype\x12\x18\n" +
+	"\acaption\x18\x03 \x01(\tR\acaption\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x04 \x01(\fR\n" +
+	"fileSHA256\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\x05 \x01(\x04R\n" +
+	"fileLength\x12\x16\n" +
+	"\x06height\x18\x06 \x01(\rR\x06height\x12\x14\n" +
+	"\x05width\x18\a \x01(\rR\x05width\x12\x1a\n" +
+	"\bmediaKey\x18\b \x01(\fR\bmediaKey\x12$\n" +
+	"\rfileEncSHA256\x18\t \x01(\fR\rfileEncSHA256\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\v \x01(\tR\n" +
+	"directPath\x12,\n" +
+	"\x11mediaKeyTimestamp\x18\f \x01(\x03R\x11mediaKeyTimestamp\x12$\n" +
+	"\rJPEGThumbnail\x18\x10 \x01(\fR\rJPEGThumbnail\x128\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x16.wax.wae2e.ContextInfoR\vcontextInfo\x12\x1a\n" +
+	"\bviewOnce\x18\x19 \x01(\bR\bviewOnce\"\x8c\x04\n" +
+	"\fVideoMessage\x12\x10\n" +
+	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1a\n" +
+	"\bmimetype\x18\x02 \x01(\tR\bmimetype\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x03 \x01(\fR\n" +
+	"fileSHA256\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\x04 \x01(\x04R\n" +
+	"fileLength\x12\x18\n" +
+	"\aseconds\x18\x05 \x01(\rR\aseconds\x12\x1a\n" +
+	"\bmediaKey\x18\x06 \x01(\fR\bmediaKey\x12\x18\n" +
+	"\acaption\x18\a \x01(\tR\acaption\x12 \n" +
+	"\vgifPlayback\x18\b \x01(\bR\vgifPlayback\x12\x16\n" +
+	"\x06height\x18\t \x01(\rR\x06height\x12\x14\n" +
+	"\x05width\x18\n" +
+	" \x01(\rR\x05width\x12$\n" +
+	"\rfileEncSHA256\x18\v \x01(\fR\rfileEncSHA256\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\r \x01(\tR\n" +
+	"directPath\x12,\n" +
+	"\x11mediaKeyTimestamp\x18\x0e \x01(\x03R\x11mediaKeyTimestamp\x12$\n" +
+	"\rJPEGThumbnail\x18\x10 \x01(\fR\rJPEGThumbnail\x128\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x16.wax.wae2e.ContextInfoR\vcontextInfo\x12\x1a\n" +
+	"\bviewOnce\x18\x14 \x01(\bR\bviewOnce\"\xaa\x03\n" +
+	"\fAudioMessage\x12\x10\n" +
+	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1a\n" +
+	"\bmimetype\x18\x02 \x01(\tR\bmimetype\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x03 \x01(\fR\n" +
+	"fileSHA256\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\x04 \x01(\x04R\n" +
+	"fileLength\x12\x18\n" +
+	"\aseconds\x18\x05 \x01(\rR\aseconds\x12\x10\n" +
+	"\x03PTT\x18\x06 \x01(\bR\x03PTT\x12\x1a\n" +
+	"\bmediaKey\x18\a \x01(\fR\bmediaKey\x12$\n" +
+	"\rfileEncSHA256\x18\b \x01(\fR\rfileEncSHA256\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\t \x01(\tR\n" +
+	"directPath\x12,\n" +
+	"\x11mediaKeyTimestamp\x18\n" +
+	" \x01(\x03R\x11mediaKeyTimestamp\x128\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x16.wax.wae2e.ContextInfoR\vcontextInfo\x12\x1a\n" +
+	"\bwaveform\x18\x13 \x01(\fR\bwaveform\x12\x1a\n" +
+	"\bviewOnce\x18\x15 \x01(\bR\bviewOnce\"\xd9\x03\n" +
+	"\x0fDocumentMessage\x12\x10\n" +
+	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1a\n" +
+	"\bmimetype\x18\x02 \x01(\tR\bmimetype\x12\x14\n" +
+	"\x05title\x18\x03 \x01(\tR\x05title\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x04 \x01(\fR\n" +
+	"fileSHA256\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\x05 \x01(\x04R\n" +
+	"fileLength\x12\x1c\n" +
+	"\tpageCount\x18\x06 \x01(\rR\tpageCount\x12\x1a\n" +
+	"\bmediaKey\x18\a \x01(\fR\bmediaKey\x12\x1a\n" +
+	"\bfileName\x18\b \x01(\tR\bfileName\x12$\n" +
+	"\rfileEncSHA256\x18\t \x01(\fR\rfileEncSHA256\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\n" +
+	" \x01(\tR\n" +
+	"directPath\x12,\n" +
+	"\x11mediaKeyTimestamp\x18\v \x01(\x03R\x11mediaKeyTimestamp\x12$\n" +
+	"\rJPEGThumbnail\x18\x10 \x01(\fR\rJPEGThumbnail\x128\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x16.wax.wae2e.ContextInfoR\vcontextInfo\x12\x18\n" +
+	"\acaption\x18\x14 \x01(\tR\acaption\"\x96\x03\n" +
+	"\x0eStickerMessage\x12\x10\n" +
+	"\x03URL\x18\x01 \x01(\tR\x03URL\x12\x1e\n" +
+	"\n" +
+	"fileSHA256\x18\x02 \x01(\fR\n" +
+	"fileSHA256\x12$\n" +
+	"\rfileEncSHA256\x18\x03 \x01(\fR\rfileEncSHA256\x12\x1a\n" +
+	"\bmediaKey\x18\x04 \x01(\fR\bmediaKey\x12\x1a\n" +
+	"\bmimetype\x18\x05 \x01(\tR\bmimetype\x12\x16\n" +
+	"\x06height\x18\x06 \x01(\rR\x06height\x12\x14\n" +
+	"\x05width\x18\a \x01(\rR\x05width\x12\x1e\n" +
+	"\n" +
+	"directPath\x18\b \x01(\tR\n" +
+	"directPath\x12\x1e\n" +
+	"\n" +
+	"fileLength\x18\t \x01(\x04R\n" +
+	"fileLength\x12,\n" +
+	"\x11mediaKeyTimestamp\x18\n" +
+	" \x01(\x03R\x11mediaKeyTimestamp\x12\x1e\n" +
+	"\n" +
+	"isAnimated\x18\r \x01(\bR\n" +
+	"isAnimated\x128\n" +
+	"\vcontextInfo\x18\x11 \x01(\v2\x16.wax.wae2e.ContextInfoR\vcontextInfo\"|\n" +
+	"\x0fReactionMessage\x12'\n" +
+	"\x03key\x18\x01 \x01(\v2\x15.wax.wae2e.MessageKeyR\x03key\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12,\n" +
+	"\x11senderTimestampMS\x18\x04 \x01(\x03R\x11senderTimestampMSB.Z,github.com/mdenesfe/wax/internal/proto/wae2e"
 
 var (
 	file_wae2e_wae2e_proto_rawDescOnce sync.Once
@@ -855,7 +1818,7 @@ func file_wae2e_wae2e_proto_rawDescGZIP() []byte {
 }
 
 var file_wae2e_wae2e_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wae2e_wae2e_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_wae2e_wae2e_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_wae2e_wae2e_proto_goTypes = []any{
 	(ProtocolMessage_Type)(0),            // 0: wax.wae2e.ProtocolMessage.Type
 	(*MessageKey)(nil),                   // 1: wax.wae2e.MessageKey
@@ -867,31 +1830,49 @@ var file_wae2e_wae2e_proto_goTypes = []any{
 	(*DeviceSentMessage)(nil),            // 7: wax.wae2e.DeviceSentMessage
 	(*MessageContextInfo)(nil),           // 8: wax.wae2e.MessageContextInfo
 	(*ProtocolMessage)(nil),              // 9: wax.wae2e.ProtocolMessage
+	(*ImageMessage)(nil),                 // 10: wax.wae2e.ImageMessage
+	(*VideoMessage)(nil),                 // 11: wax.wae2e.VideoMessage
+	(*AudioMessage)(nil),                 // 12: wax.wae2e.AudioMessage
+	(*DocumentMessage)(nil),              // 13: wax.wae2e.DocumentMessage
+	(*StickerMessage)(nil),               // 14: wax.wae2e.StickerMessage
+	(*ReactionMessage)(nil),              // 15: wax.wae2e.ReactionMessage
 }
 var file_wae2e_wae2e_proto_depIdxs = []int32{
 	4,  // 0: wax.wae2e.Message.senderKeyDistributionMessage:type_name -> wax.wae2e.SenderKeyDistributionMessage
-	6,  // 1: wax.wae2e.Message.extendedTextMessage:type_name -> wax.wae2e.ExtendedTextMessage
-	9,  // 2: wax.wae2e.Message.protocolMessage:type_name -> wax.wae2e.ProtocolMessage
-	7,  // 3: wax.wae2e.Message.deviceSentMessage:type_name -> wax.wae2e.DeviceSentMessage
-	8,  // 4: wax.wae2e.Message.messageContextInfo:type_name -> wax.wae2e.MessageContextInfo
-	3,  // 5: wax.wae2e.Message.viewOnceMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 6: wax.wae2e.Message.ephemeralMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 7: wax.wae2e.Message.documentWithCaptionMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 8: wax.wae2e.Message.viewOnceMessageV2:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 9: wax.wae2e.Message.editedMessage:type_name -> wax.wae2e.FutureProofMessage
-	3,  // 10: wax.wae2e.Message.viewOnceMessageV2Extension:type_name -> wax.wae2e.FutureProofMessage
-	2,  // 11: wax.wae2e.FutureProofMessage.message:type_name -> wax.wae2e.Message
-	2,  // 12: wax.wae2e.ContextInfo.quotedMessage:type_name -> wax.wae2e.Message
-	5,  // 13: wax.wae2e.ExtendedTextMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
-	2,  // 14: wax.wae2e.DeviceSentMessage.message:type_name -> wax.wae2e.Message
-	1,  // 15: wax.wae2e.ProtocolMessage.key:type_name -> wax.wae2e.MessageKey
-	0,  // 16: wax.wae2e.ProtocolMessage.type:type_name -> wax.wae2e.ProtocolMessage.Type
-	2,  // 17: wax.wae2e.ProtocolMessage.editedMessage:type_name -> wax.wae2e.Message
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	10, // 1: wax.wae2e.Message.imageMessage:type_name -> wax.wae2e.ImageMessage
+	6,  // 2: wax.wae2e.Message.extendedTextMessage:type_name -> wax.wae2e.ExtendedTextMessage
+	13, // 3: wax.wae2e.Message.documentMessage:type_name -> wax.wae2e.DocumentMessage
+	12, // 4: wax.wae2e.Message.audioMessage:type_name -> wax.wae2e.AudioMessage
+	11, // 5: wax.wae2e.Message.videoMessage:type_name -> wax.wae2e.VideoMessage
+	9,  // 6: wax.wae2e.Message.protocolMessage:type_name -> wax.wae2e.ProtocolMessage
+	14, // 7: wax.wae2e.Message.stickerMessage:type_name -> wax.wae2e.StickerMessage
+	7,  // 8: wax.wae2e.Message.deviceSentMessage:type_name -> wax.wae2e.DeviceSentMessage
+	8,  // 9: wax.wae2e.Message.messageContextInfo:type_name -> wax.wae2e.MessageContextInfo
+	3,  // 10: wax.wae2e.Message.viewOnceMessage:type_name -> wax.wae2e.FutureProofMessage
+	3,  // 11: wax.wae2e.Message.ephemeralMessage:type_name -> wax.wae2e.FutureProofMessage
+	15, // 12: wax.wae2e.Message.reactionMessage:type_name -> wax.wae2e.ReactionMessage
+	3,  // 13: wax.wae2e.Message.documentWithCaptionMessage:type_name -> wax.wae2e.FutureProofMessage
+	3,  // 14: wax.wae2e.Message.viewOnceMessageV2:type_name -> wax.wae2e.FutureProofMessage
+	3,  // 15: wax.wae2e.Message.editedMessage:type_name -> wax.wae2e.FutureProofMessage
+	3,  // 16: wax.wae2e.Message.viewOnceMessageV2Extension:type_name -> wax.wae2e.FutureProofMessage
+	2,  // 17: wax.wae2e.FutureProofMessage.message:type_name -> wax.wae2e.Message
+	2,  // 18: wax.wae2e.ContextInfo.quotedMessage:type_name -> wax.wae2e.Message
+	5,  // 19: wax.wae2e.ExtendedTextMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	2,  // 20: wax.wae2e.DeviceSentMessage.message:type_name -> wax.wae2e.Message
+	1,  // 21: wax.wae2e.ProtocolMessage.key:type_name -> wax.wae2e.MessageKey
+	0,  // 22: wax.wae2e.ProtocolMessage.type:type_name -> wax.wae2e.ProtocolMessage.Type
+	2,  // 23: wax.wae2e.ProtocolMessage.editedMessage:type_name -> wax.wae2e.Message
+	5,  // 24: wax.wae2e.ImageMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	5,  // 25: wax.wae2e.VideoMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	5,  // 26: wax.wae2e.AudioMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	5,  // 27: wax.wae2e.DocumentMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	5,  // 28: wax.wae2e.StickerMessage.contextInfo:type_name -> wax.wae2e.ContextInfo
+	1,  // 29: wax.wae2e.ReactionMessage.key:type_name -> wax.wae2e.MessageKey
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_wae2e_wae2e_proto_init() }
@@ -905,7 +1886,7 @@ func file_wae2e_wae2e_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wae2e_wae2e_proto_rawDesc), len(file_wae2e_wae2e_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

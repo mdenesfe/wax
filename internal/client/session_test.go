@@ -25,14 +25,15 @@ import (
 const testUser = "905550000000"
 
 type harness struct {
-	t      *testing.T
-	ctx    context.Context
-	store  *store.Store
-	srv    *fakewa.Server
-	client *Client
-	events chan Event
-	runErr chan error
-	inst   string
+	t       *testing.T
+	ctx     context.Context
+	store   *store.Store
+	srv     *fakewa.Server
+	client  *Client
+	events  chan Event
+	runErr  chan error
+	inst    string
+	backlog []Event
 }
 
 func newHarness(t *testing.T, tweak func(*Config)) *harness {
@@ -55,7 +56,7 @@ func newHarness(t *testing.T, tweak func(*Config)) *harness {
 	t.Cleanup(srv.Close)
 	h := &harness{
 		t: t, ctx: ctx, store: st, srv: srv,
-		events: make(chan Event, 64), runErr: make(chan error, 1),
+		events: make(chan Event, 1024), runErr: make(chan error, 1),
 		inst: fmt.Sprintf("client-%s-%d", t.Name(), time.Now().UnixNano()),
 	}
 	t.Cleanup(func() { st.DeleteDevice(context.Background(), h.inst) })
@@ -89,15 +90,23 @@ func (h *harness) accept() *fakewa.Conn {
 	return c
 }
 
-// waitEvent returns the first event of type T, skipping others.
+// waitEvent returns the first event of type T. Other events are kept in a
+// backlog for later waitEvent calls, so the order of waits does not matter.
 func waitEvent[T Event](h *harness) T {
 	h.t.Helper()
+	for i, e := range h.backlog {
+		if v, ok := e.(T); ok {
+			h.backlog = append(h.backlog[:i], h.backlog[i+1:]...)
+			return v
+		}
+	}
 	for {
 		select {
 		case e := <-h.events:
 			if v, ok := e.(T); ok {
 				return v
 			}
+			h.backlog = append(h.backlog, e)
 		case err := <-h.runErr:
 			h.t.Fatalf("Run returned early: %v", err)
 		case <-h.ctx.Done():

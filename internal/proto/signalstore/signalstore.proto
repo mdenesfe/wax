@@ -56,3 +56,21 @@ message SessionRecord {
 	SessionState          current  = 1;
 	repeated SessionState previous = 2; // newest first
 }
+
+message SenderMessageKey {
+	uint32 iteration = 1;
+	bytes  seed      = 2;
+}
+
+message SenderKeyState {
+	uint32                    keyId          = 1;
+	uint32                    iteration      = 2; // chain position
+	bytes                     chainSeed      = 3;
+	bytes                     signingPublic  = 4;
+	bytes                     signingSeed    = 5; // only for our own sender keys
+	repeated SenderMessageKey messageKeys    = 6; // skipped, oldest first
+}
+
+message SenderKeyRecord {
+	repeated SenderKeyState states = 1; // newest first
+}

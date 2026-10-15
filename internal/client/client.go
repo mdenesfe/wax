@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdenesfe/wax/internal/store"
@@ -48,6 +49,13 @@ type Config struct {
 	KeepAliveTimeout           time.Duration // response deadline (10 s)
 	KeepAliveMaxFailure        time.Duration // reconnect after this long without a pong (90 s)
 
+	// PushName is our display name, required to announce presence. It is
+	// learned from app state sync in a later phase; set it here meanwhile.
+	PushName string
+
+	// MediaHTTP is used for media up/downloads (nil: default client).
+	MediaHTTP *http.Client
+
 	// DumpNodes logs every received node at debug level (masked unless
 	// DumpUnmasked is also set).
 	DumpNodes    bool
@@ -64,7 +72,12 @@ type Client struct {
 	sendMu   sync.Mutex // serializes outgoing messages (ordering, device fan-out)
 	locks    addrLocks  // per-Signal-address locks
 	devCache deviceCache
-	retries  retryCounter
+	groups   groupCache
+	media    mediaState
+
+	available   atomic.Bool // we announced presence "available"
+	mediaScheme string      // tests only: "http" for a local media server
+	retries     retryCounter
 
 	mu      sync.Mutex
 	current *session // nil while disconnected

@@ -328,9 +328,8 @@ func TestUnsupportedStanzasAreDeferredAndAcked(t *testing.T) {
 	h := newHarness(t, nil)
 	_, c := h.pair()
 	h.serveLoginUpload(c, 0)
-	group := wabin.JID{User: "120363000000000001", Server: wabin.ServerGroup}
-	must(t, c.Send(h.ctx, wabin.Node{Tag: "message", Attrs: wabin.Attrs{"from": group, "id": "G-1", "participant": bobLID, "t": "1700000000", "type": "text"},
-		Content: []wabin.Node{{Tag: "enc", Attrs: wabin.Attrs{"v": "2", "type": "skmsg"}, Content: []byte{1, 2, 3}}}}))
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "message", Attrs: wabin.Attrs{"from": bobLID, "id": "G-1", "t": "1700000000", "type": "text"},
+		Content: []wabin.Node{{Tag: "enc", Attrs: wabin.Attrs{"v": "2", "type": "msmsg"}, Content: []byte{1, 2, 3}}}}))
 	ack := readNodeWith(t, h, c, "ack", "G-1")
 	if cls, _ := ack.AttrString("class"); cls != "message" {
 		t.Fatalf("ack %s", ack.String())

@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"hash/fnv"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,9 +117,8 @@ func (s *session) handleMessage(n *wabin.Node) {
 		s.sendAckCode(n, nackParsingError)
 		return
 	}
-	if info.IsGroup {
-		// Group messages (sender keys) are implemented in phase 4.
-		s.deferStanza(n, "group messages not implemented yet")
+	if info.Chat.Server == wabin.ServerNewsletter || info.Sender.Server == wabin.ServerBot {
+		s.deferStanza(n, "newsletters and bots not implemented yet")
 		return
 	}
 	// Learn PN<->LID mappings as they appear.
@@ -148,21 +149,29 @@ func (s *session) handleMessage(n *wabin.Node) {
 		s.sendAckCode(n, nackUnrecognizedStanza)
 		return
 	}
-	protobufFailed := false
+	protobufFailed, handledAny := false, false
+	var unsupported []string
 	for i := range encs {
 		enc := &encs[i]
 		encType, _ := enc.AttrString("type")
-		if encType != "pkmsg" && encType != "msg" {
-			s.log.Warn("unsupported enc type", "type", encType, "id", info.ID)
+		var plaintext, hash []byte
+		var err error
+		switch {
+		case encType == "pkmsg" || encType == "msg":
+			plaintext, hash, err = s.decryptEnc(info, encJID, enc, encType)
+		case encType == "skmsg" && info.IsGroup:
+			plaintext, hash, err = s.decryptGroupEnc(info, encJID, enc)
+		default:
+			unsupported = append(unsupported, encType)
 			continue
 		}
-		plaintext, hash, err := s.decryptEnc(info, encJID, enc, encType)
 		if errors.Is(err, errAlreadyHandled) || errors.Is(err, signal.ErrDuplicateMessage) {
 			s.log.Debug("duplicate message ignored", "id", info.ID, "reason", err)
+			handledAny = true
 			continue
 		}
 		if err != nil {
-			s.log.Warn("decryption failed", "id", info.ID, "from", wabin.MaskJID(info.Sender), "error", err)
+			s.log.Warn("decryption failed", "id", info.ID, "type", encType, "from", wabin.MaskJID(info.Sender), "error", err)
 			if s.ctx.Err() != nil {
 				return // shutting down: leave it for redelivery
 			}
@@ -171,6 +180,7 @@ func (s *session) handleMessage(n *wabin.Node) {
 			s.c.emit(UndecryptableMessage{Info: *info, Err: err})
 			return
 		}
+		handledAny = true
 		if v, _ := enc.AttrString("v"); v != "2" {
 			s.log.Warn("unsupported message version", "v", v, "id", info.ID)
 			protobufFailed = true
@@ -184,15 +194,114 @@ func (s *session) handleMessage(n *wabin.Node) {
 			s.markHandled(hash)
 			continue
 		}
-		retries, _ := enc.AttrInt("count")
-		s.dispatchMessage(info, &msg, int(retries))
+		if skdm := msg.GetSenderKeyDistributionMessage(); skdm != nil {
+			if err := s.processSKDM(info, encJID, skdm); err != nil {
+				// Not fatal: a later skmsg from this sender will fail and
+				// trigger a retry receipt, which brings a fresh distribution.
+				s.log.Warn("could not store sender key", "id", info.ID, "error", err)
+			}
+		}
+		if hasContent(&msg) {
+			retries, _ := enc.AttrInt("count")
+			s.dispatchMessage(info, &msg, int(retries))
+		}
 		s.markHandled(hash)
+	}
+	if !handledAny && len(unsupported) > 0 {
+		s.deferStanza(n, "unsupported enc types "+strings.Join(unsupported, ","))
+		return
 	}
 	if protobufFailed {
 		s.sendAckCode(n, nackInvalidProtobuf)
 		return
 	}
 	s.sendMessageReceipt(n, info)
+}
+
+// hasContent reports whether a message carries anything besides key
+// distribution / context metadata (group "pkmsg"s often carry only the
+// sender key and must not surface as empty messages).
+func hasContent(m *wae2e.Message) bool {
+	c := proto.Clone(m).(*wae2e.Message)
+	c.SenderKeyDistributionMessage = nil
+	c.MessageContextInfo = nil
+	return proto.Size(c) > 0
+}
+
+// processSKDM stores a sender key received from a group member.
+func (s *session) processSKDM(info *MessageInfo, from wabin.JID, skdm *wae2e.SenderKeyDistributionMessage) error {
+	group := info.Chat
+	if g, err := wabin.ParseJID(skdm.GetGroupID()); err == nil && !g.IsEmpty() {
+		group = g
+	}
+	if group.Server != wabin.ServerGroup && group.Server != wabin.ServerBroadcast {
+		return fmt.Errorf("sender key for non-group chat %s", group.Server)
+	}
+	addr := signalAddress(from)
+	unlock := s.c.locks.lock("sk|" + group.String() + "|" + addr)
+	defer unlock()
+	return s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
+		rec, err := tx.LoadSenderKey(s.ctx, s.c.cfg.InstanceID, group.String(), addr)
+		if err != nil {
+			return err
+		}
+		if err := rec.ProcessDistribution(skdm.GetAxolotlSenderKeyDistributionMessage()); err != nil {
+			return err
+		}
+		return tx.PutSenderKey(s.ctx, s.c.cfg.InstanceID, group.String(), addr, rec)
+	})
+}
+
+// decryptGroupEnc decrypts a sender-key message, transactionally like
+// decryptEnc.
+func (s *session) decryptGroupEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node) ([]byte, []byte, error) {
+	ct, ok := enc.Bytes()
+	if !ok || len(ct) == 0 {
+		return nil, nil, errors.New("enc without payload")
+	}
+	group := info.Chat.String()
+	addr := signalAddress(from)
+	hh := sha256.New()
+	for _, part := range [][]byte{ct, {0}, []byte("skmsg"), {0}, []byte(group), {0}, []byte(addr)} {
+		hh.Write(part)
+	}
+	hash := hh.Sum(nil)
+	unlock := s.c.locks.lock("sk|" + group + "|" + addr)
+	defer unlock()
+	var padded []byte
+	err := s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
+		buf, err := tx.GetBufferedEvent(s.ctx, s.c.cfg.InstanceID, hash)
+		if err != nil {
+			return err
+		}
+		if buf != nil {
+			if buf.Plaintext == nil {
+				return errAlreadyHandled
+			}
+			padded = buf.Plaintext
+			return nil
+		}
+		rec, err := tx.LoadSenderKey(s.ctx, s.c.cfg.InstanceID, group, addr)
+		if err != nil {
+			return err
+		}
+		if padded, err = rec.DecryptGroup(ct); err != nil {
+			return err
+		}
+		if err := tx.PutSenderKey(s.ctx, s.c.cfg.InstanceID, group, addr, rec); err != nil {
+			return err
+		}
+		return tx.PutBufferedEvent(s.ctx, s.c.cfg.InstanceID, hash, padded, info.Timestamp)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	pt, err := unpadMessage(padded)
+	if err != nil {
+		s.markHandled(hash)
+		return nil, nil, err
+	}
+	return pt, hash, nil
 }
 
 // decryptEnc decrypts one <enc> inside a single database transaction:
@@ -346,15 +455,18 @@ func (s *session) sendMessageReceipt(n *wabin.Node, info *MessageInfo) {
 		if info.Type == "peer_msg" {
 			attrs["type"] = "peer_msg"
 		}
-	} else {
-		// "inactive": delivered to a device that is not showing the chat.
-		// Read receipts are sent explicitly by the application.
+	} else if !s.c.available.Load() {
+		// "inactive": delivered to a device that is not online. Read
+		// receipts are sent explicitly by the application (MarkRead).
 		attrs["type"] = "inactive"
 	}
 	s.sendOrLog(wabin.Node{Tag: "receipt", Attrs: attrs})
 }
 
 func (s *session) sendAckCode(n *wabin.Node, code int) {
+	if s.replaying {
+		return
+	}
 	attrs := wabin.Attrs{"class": n.Tag, "id": n.Attrs["id"], "to": n.Attrs["from"], "error": code}
 	for _, k := range []string{"participant", "recipient"} {
 		if v, ok := n.Attrs[k]; ok {

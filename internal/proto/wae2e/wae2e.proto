@@ -15,12 +15,18 @@ message MessageKey { // WACommon.MessageKey
 message Message {
 	optional string                       conversation                 = 1;
 	optional SenderKeyDistributionMessage senderKeyDistributionMessage = 2;
+	optional ImageMessage                 imageMessage                 = 3;
 	optional ExtendedTextMessage          extendedTextMessage          = 6;
+	optional DocumentMessage              documentMessage              = 7;
+	optional AudioMessage                 audioMessage                 = 8;
+	optional VideoMessage                 videoMessage                 = 9;
 	optional ProtocolMessage              protocolMessage              = 12;
+	optional StickerMessage               stickerMessage               = 26;
 	optional DeviceSentMessage            deviceSentMessage            = 31;
 	optional MessageContextInfo           messageContextInfo           = 35;
 	optional FutureProofMessage           viewOnceMessage              = 37;
 	optional FutureProofMessage           ephemeralMessage             = 40;
+	optional ReactionMessage              reactionMessage              = 46;
 	optional FutureProofMessage           documentWithCaptionMessage   = 53;
 	optional FutureProofMessage           viewOnceMessageV2            = 55;
 	optional FutureProofMessage           editedMessage                = 58;
@@ -91,4 +97,96 @@ message ProtocolMessage {
 	optional Type       type          = 2;
 	optional Message    editedMessage = 14;
 	optional int64      timestampMS   = 15;
+}
+
+// Media messages. Field numbers differ between the types; they are copied
+// from WhatsApp Web exactly.
+message ImageMessage {
+	optional string      URL               = 1;
+	optional string      mimetype          = 2;
+	optional string      caption           = 3;
+	optional bytes       fileSHA256        = 4;
+	optional uint64      fileLength        = 5;
+	optional uint32      height            = 6;
+	optional uint32      width             = 7;
+	optional bytes       mediaKey          = 8;
+	optional bytes       fileEncSHA256     = 9;
+	optional string      directPath        = 11;
+	optional int64       mediaKeyTimestamp = 12;
+	optional bytes       JPEGThumbnail     = 16;
+	optional ContextInfo contextInfo       = 17;
+	optional bool        viewOnce          = 25;
+}
+
+message VideoMessage {
+	optional string      URL               = 1;
+	optional string      mimetype          = 2;
+	optional bytes       fileSHA256        = 3;
+	optional uint64      fileLength        = 4;
+	optional uint32      seconds           = 5;
+	optional bytes       mediaKey          = 6;
+	optional string      caption           = 7;
+	optional bool        gifPlayback       = 8;
+	optional uint32      height            = 9;
+	optional uint32      width             = 10;
+	optional bytes       fileEncSHA256     = 11;
+	optional string      directPath        = 13;
+	optional int64       mediaKeyTimestamp = 14;
+	optional bytes       JPEGThumbnail     = 16;
+	optional ContextInfo contextInfo       = 17;
+	optional bool        viewOnce          = 20;
+}
+
+message AudioMessage {
+	optional string      URL               = 1;
+	optional string      mimetype          = 2;
+	optional bytes       fileSHA256        = 3;
+	optional uint64      fileLength        = 4;
+	optional uint32      seconds           = 5;
+	optional bool        PTT               = 6;
+	optional bytes       mediaKey          = 7;
+	optional bytes       fileEncSHA256     = 8;
+	optional string      directPath        = 9;
+	optional int64       mediaKeyTimestamp = 10;
+	optional ContextInfo contextInfo       = 17;
+	optional bytes       waveform          = 19;
+	optional bool        viewOnce          = 21;
+}
+
+message DocumentMessage {
+	optional string      URL               = 1;
+	optional string      mimetype          = 2;
+	optional string      title             = 3;
+	optional bytes       fileSHA256        = 4;
+	optional uint64      fileLength        = 5;
+	optional uint32      pageCount         = 6;
+	optional bytes       mediaKey          = 7;
+	optional string      fileName          = 8;
+	optional bytes       fileEncSHA256     = 9;
+	optional string      directPath        = 10;
+	optional int64       mediaKeyTimestamp = 11;
+	optional bytes       JPEGThumbnail     = 16;
+	optional ContextInfo contextInfo       = 17;
+	optional string      caption           = 20;
+}
+
+message StickerMessage {
+	optional string      URL               = 1;
+	optional bytes       fileSHA256        = 2;
+	optional bytes       fileEncSHA256     = 3;
+	optional bytes       mediaKey          = 4;
+	optional string      mimetype          = 5;
+	optional uint32      height            = 6;
+	optional uint32      width             = 7;
+	optional string      directPath        = 8;
+	optional uint64      fileLength        = 9;
+	optional int64       mediaKeyTimestamp = 10;
+	optional bool        isAnimated        = 13;
+	optional ContextInfo contextInfo       = 17;
+}
+
+message ReactionMessage {
+	optional MessageKey key               = 1;
+	optional string     text              = 2;
+	optional int64      senderTimestampMS = 4;
 }

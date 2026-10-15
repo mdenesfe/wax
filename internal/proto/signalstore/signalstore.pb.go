@@ -511,6 +511,186 @@ func (x *SessionRecord) GetPrevious() []*SessionState {
 	return nil
 }
 
+type SenderMessageKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Iteration     uint32                 `protobuf:"varint,1,opt,name=iteration,proto3" json:"iteration,omitempty"`
+	Seed          []byte                 `protobuf:"bytes,2,opt,name=seed,proto3" json:"seed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SenderMessageKey) Reset() {
+	*x = SenderMessageKey{}
+	mi := &file_signalstore_signalstore_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SenderMessageKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SenderMessageKey) ProtoMessage() {}
+
+func (x *SenderMessageKey) ProtoReflect() protoreflect.Message {
+	mi := &file_signalstore_signalstore_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SenderMessageKey.ProtoReflect.Descriptor instead.
+func (*SenderMessageKey) Descriptor() ([]byte, []int) {
+	return file_signalstore_signalstore_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SenderMessageKey) GetIteration() uint32 {
+	if x != nil {
+		return x.Iteration
+	}
+	return 0
+}
+
+func (x *SenderMessageKey) GetSeed() []byte {
+	if x != nil {
+		return x.Seed
+	}
+	return nil
+}
+
+type SenderKeyState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyId         uint32                 `protobuf:"varint,1,opt,name=keyId,proto3" json:"keyId,omitempty"`
+	Iteration     uint32                 `protobuf:"varint,2,opt,name=iteration,proto3" json:"iteration,omitempty"` // chain position
+	ChainSeed     []byte                 `protobuf:"bytes,3,opt,name=chainSeed,proto3" json:"chainSeed,omitempty"`
+	SigningPublic []byte                 `protobuf:"bytes,4,opt,name=signingPublic,proto3" json:"signingPublic,omitempty"`
+	SigningSeed   []byte                 `protobuf:"bytes,5,opt,name=signingSeed,proto3" json:"signingSeed,omitempty"` // only for our own sender keys
+	MessageKeys   []*SenderMessageKey    `protobuf:"bytes,6,rep,name=messageKeys,proto3" json:"messageKeys,omitempty"` // skipped, oldest first
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SenderKeyState) Reset() {
+	*x = SenderKeyState{}
+	mi := &file_signalstore_signalstore_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SenderKeyState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SenderKeyState) ProtoMessage() {}
+
+func (x *SenderKeyState) ProtoReflect() protoreflect.Message {
+	mi := &file_signalstore_signalstore_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SenderKeyState.ProtoReflect.Descriptor instead.
+func (*SenderKeyState) Descriptor() ([]byte, []int) {
+	return file_signalstore_signalstore_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SenderKeyState) GetKeyId() uint32 {
+	if x != nil {
+		return x.KeyId
+	}
+	return 0
+}
+
+func (x *SenderKeyState) GetIteration() uint32 {
+	if x != nil {
+		return x.Iteration
+	}
+	return 0
+}
+
+func (x *SenderKeyState) GetChainSeed() []byte {
+	if x != nil {
+		return x.ChainSeed
+	}
+	return nil
+}
+
+func (x *SenderKeyState) GetSigningPublic() []byte {
+	if x != nil {
+		return x.SigningPublic
+	}
+	return nil
+}
+
+func (x *SenderKeyState) GetSigningSeed() []byte {
+	if x != nil {
+		return x.SigningSeed
+	}
+	return nil
+}
+
+func (x *SenderKeyState) GetMessageKeys() []*SenderMessageKey {
+	if x != nil {
+		return x.MessageKeys
+	}
+	return nil
+}
+
+type SenderKeyRecord struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	States        []*SenderKeyState      `protobuf:"bytes,1,rep,name=states,proto3" json:"states,omitempty"` // newest first
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SenderKeyRecord) Reset() {
+	*x = SenderKeyRecord{}
+	mi := &file_signalstore_signalstore_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SenderKeyRecord) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SenderKeyRecord) ProtoMessage() {}
+
+func (x *SenderKeyRecord) ProtoReflect() protoreflect.Message {
+	mi := &file_signalstore_signalstore_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SenderKeyRecord.ProtoReflect.Descriptor instead.
+func (*SenderKeyRecord) Descriptor() ([]byte, []int) {
+	return file_signalstore_signalstore_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SenderKeyRecord) GetStates() []*SenderKeyState {
+	if x != nil {
+		return x.States
+	}
+	return nil
+}
+
 var File_signalstore_signalstore_proto protoreflect.FileDescriptor
 
 const file_signalstore_signalstore_proto_rawDesc = "" +
@@ -553,7 +733,19 @@ const file_signalstore_signalstore_proto_rawDesc = "" +
 	"\faliceBaseKey\x18\v \x01(\fR\faliceBaseKey\"\x83\x01\n" +
 	"\rSessionRecord\x127\n" +
 	"\acurrent\x18\x01 \x01(\v2\x1d.wax.signalstore.SessionStateR\acurrent\x129\n" +
-	"\bprevious\x18\x02 \x03(\v2\x1d.wax.signalstore.SessionStateR\bpreviousB4Z2github.com/mdenesfe/wax/internal/proto/signalstoreb\x06proto3"
+	"\bprevious\x18\x02 \x03(\v2\x1d.wax.signalstore.SessionStateR\bprevious\"D\n" +
+	"\x10SenderMessageKey\x12\x1c\n" +
+	"\titeration\x18\x01 \x01(\rR\titeration\x12\x12\n" +
+	"\x04seed\x18\x02 \x01(\fR\x04seed\"\xef\x01\n" +
+	"\x0eSenderKeyState\x12\x14\n" +
+	"\x05keyId\x18\x01 \x01(\rR\x05keyId\x12\x1c\n" +
+	"\titeration\x18\x02 \x01(\rR\titeration\x12\x1c\n" +
+	"\tchainSeed\x18\x03 \x01(\fR\tchainSeed\x12$\n" +
+	"\rsigningPublic\x18\x04 \x01(\fR\rsigningPublic\x12 \n" +
+	"\vsigningSeed\x18\x05 \x01(\fR\vsigningSeed\x12C\n" +
+	"\vmessageKeys\x18\x06 \x03(\v2!.wax.signalstore.SenderMessageKeyR\vmessageKeys\"J\n" +
+	"\x0fSenderKeyRecord\x127\n" +
+	"\x06states\x18\x01 \x03(\v2\x1f.wax.signalstore.SenderKeyStateR\x06statesB4Z2github.com/mdenesfe/wax/internal/proto/signalstoreb\x06proto3"
 
 var (
 	file_signalstore_signalstore_proto_rawDescOnce sync.Once
@@ -567,30 +759,35 @@ func file_signalstore_signalstore_proto_rawDescGZIP() []byte {
 	return file_signalstore_signalstore_proto_rawDescData
 }
 
-var file_signalstore_signalstore_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_signalstore_signalstore_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_signalstore_signalstore_proto_goTypes = []any{
-	(*ChainKey)(nil),      // 0: wax.signalstore.ChainKey
-	(*MessageKey)(nil),    // 1: wax.signalstore.MessageKey
-	(*SenderChain)(nil),   // 2: wax.signalstore.SenderChain
-	(*ReceiverChain)(nil), // 3: wax.signalstore.ReceiverChain
-	(*PendingPreKey)(nil), // 4: wax.signalstore.PendingPreKey
-	(*SessionState)(nil),  // 5: wax.signalstore.SessionState
-	(*SessionRecord)(nil), // 6: wax.signalstore.SessionRecord
+	(*ChainKey)(nil),         // 0: wax.signalstore.ChainKey
+	(*MessageKey)(nil),       // 1: wax.signalstore.MessageKey
+	(*SenderChain)(nil),      // 2: wax.signalstore.SenderChain
+	(*ReceiverChain)(nil),    // 3: wax.signalstore.ReceiverChain
+	(*PendingPreKey)(nil),    // 4: wax.signalstore.PendingPreKey
+	(*SessionState)(nil),     // 5: wax.signalstore.SessionState
+	(*SessionRecord)(nil),    // 6: wax.signalstore.SessionRecord
+	(*SenderMessageKey)(nil), // 7: wax.signalstore.SenderMessageKey
+	(*SenderKeyState)(nil),   // 8: wax.signalstore.SenderKeyState
+	(*SenderKeyRecord)(nil),  // 9: wax.signalstore.SenderKeyRecord
 }
 var file_signalstore_signalstore_proto_depIdxs = []int32{
-	0, // 0: wax.signalstore.SenderChain.chainKey:type_name -> wax.signalstore.ChainKey
-	0, // 1: wax.signalstore.ReceiverChain.chainKey:type_name -> wax.signalstore.ChainKey
-	1, // 2: wax.signalstore.ReceiverChain.messageKeys:type_name -> wax.signalstore.MessageKey
-	2, // 3: wax.signalstore.SessionState.senderChain:type_name -> wax.signalstore.SenderChain
-	3, // 4: wax.signalstore.SessionState.receiverChains:type_name -> wax.signalstore.ReceiverChain
-	4, // 5: wax.signalstore.SessionState.pendingPreKey:type_name -> wax.signalstore.PendingPreKey
-	5, // 6: wax.signalstore.SessionRecord.current:type_name -> wax.signalstore.SessionState
-	5, // 7: wax.signalstore.SessionRecord.previous:type_name -> wax.signalstore.SessionState
-	8, // [8:8] is the sub-list for method output_type
-	8, // [8:8] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: wax.signalstore.SenderChain.chainKey:type_name -> wax.signalstore.ChainKey
+	0,  // 1: wax.signalstore.ReceiverChain.chainKey:type_name -> wax.signalstore.ChainKey
+	1,  // 2: wax.signalstore.ReceiverChain.messageKeys:type_name -> wax.signalstore.MessageKey
+	2,  // 3: wax.signalstore.SessionState.senderChain:type_name -> wax.signalstore.SenderChain
+	3,  // 4: wax.signalstore.SessionState.receiverChains:type_name -> wax.signalstore.ReceiverChain
+	4,  // 5: wax.signalstore.SessionState.pendingPreKey:type_name -> wax.signalstore.PendingPreKey
+	5,  // 6: wax.signalstore.SessionRecord.current:type_name -> wax.signalstore.SessionState
+	5,  // 7: wax.signalstore.SessionRecord.previous:type_name -> wax.signalstore.SessionState
+	7,  // 8: wax.signalstore.SenderKeyState.messageKeys:type_name -> wax.signalstore.SenderMessageKey
+	8,  // 9: wax.signalstore.SenderKeyRecord.states:type_name -> wax.signalstore.SenderKeyState
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_signalstore_signalstore_proto_init() }
@@ -604,7 +801,7 @@ func file_signalstore_signalstore_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_signalstore_signalstore_proto_rawDesc), len(file_signalstore_signalstore_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
