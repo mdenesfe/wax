@@ -16,7 +16,7 @@ func TestRegistrationPayload(t *testing.T) {
 	spk, _ := keys.NewKeyPair()
 	k := RegistrationKeys{
 		RegistrationID: 0x01020304, IdentityKey: ident.Pub,
-		SignedPreKeyID: 1, SignedPreKey: spk.Pub, SignedPreKeySig: SignPreKey(ident, spk.Pub),
+		SignedPreKeyID: 1, SignedPreKey: spk.Pub, SignedPreKeySig: ident.SignPublicKey(spk.Pub),
 	}
 	raw, err := RegistrationPayload(DefaultDeviceConfig(waversion.Default), k)
 	if err != nil {

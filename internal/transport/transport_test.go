@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wa6"
 	"github.com/mdenesfe/wax/internal/proto/wacert"
 )
 
@@ -163,67 +162,13 @@ type serverResult struct {
 	err          error
 }
 
-// runServer implements the responder side of WhatsApp's XX handshake,
-// written independently of the client code path (only the shared symmetric
-// state primitives are reused).
+// runServer runs the responder side via ServerHandshake.
 func runServer(ctx context.Context, fc FrameConn, pki *testPKI, certChain []byte) serverResult {
-	fail := func(step string, err error) serverResult {
-		return serverResult{err: fmt.Errorf("server %s: %w", step, err)}
-	}
-	ss := newSymmetricState(NoiseProtocolName, testPrologue)
-	raw, err := fc.ReadFrame(ctx)
+	res, err := ServerHandshake(ctx, fc, ServerHandshakeConfig{Prologue: testPrologue, StaticKey: pki.serverStatic, CertChain: certChain})
 	if err != nil {
-		return fail("read hello", err)
+		return serverResult{err: fmt.Errorf("server: %w", err)}
 	}
-	var hello wa6.HandshakeMessage
-	if err := proto.Unmarshal(raw, &hello); err != nil {
-		return fail("decode hello", err)
-	}
-	ce := [32]byte(hello.GetClientHello().GetEphemeral())
-	ss.mixHash(ce[:])
-
-	se, _ := keys.NewKeyPair()
-	ss.mixHash(se.Pub[:])
-	if err := ss.mixDH(se.Priv, ce); err != nil {
-		return fail("ee", err)
-	}
-	encStatic := ss.encryptAndHash(pki.serverStatic.Pub[:])
-	if err := ss.mixDH(pki.serverStatic.Priv, ce); err != nil {
-		return fail("es", err)
-	}
-	encCert := ss.encryptAndHash(certChain)
-	out, _ := proto.Marshal(&wa6.HandshakeMessage{ServerHello: &wa6.HandshakeMessage_ServerHello{
-		Ephemeral: se.Pub[:], Static: encStatic, Payload: encCert,
-	}})
-	if err := fc.SendFrame(ctx, out); err != nil {
-		return fail("send hello", err)
-	}
-
-	raw, err = fc.ReadFrame(ctx)
-	if err != nil {
-		return fail("read finish", err)
-	}
-	var fin wa6.HandshakeMessage
-	if err := proto.Unmarshal(raw, &fin); err != nil {
-		return fail("decode finish", err)
-	}
-	cs, err := ss.decryptAndHash(fin.GetClientFinish().GetStatic())
-	if err != nil {
-		return fail("decrypt client static", err)
-	}
-	if err := ss.mixDH(se.Priv, [32]byte(cs)); err != nil {
-		return fail("se", err)
-	}
-	payload, err := ss.decryptAndHash(fin.GetClientFinish().GetPayload())
-	if err != nil {
-		return fail("decrypt payload", err)
-	}
-	c2s, s2c, err := ss.split()
-	if err != nil {
-		return fail("split", err)
-	}
-	// The responder writes with the second key and reads with the first.
-	return serverResult{clientStatic: [32]byte(cs), payload: payload, conn: newNoiseConn(fc, s2c, c2s)}
+	return serverResult{clientStatic: res.ClientStatic, payload: res.Payload, conn: res.Conn}
 }
 
 func doHandshake(t *testing.T, pki *testPKI, chain []byte) (*NoiseConn, serverResult, error, *keys.KeyPair) {

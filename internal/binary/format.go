@@ -128,3 +128,13 @@ func maskTail(s string) string {
 	}
 	return strings.Repeat("*", len(s)-keep) + s[len(s)-keep:]
 }
+
+// MaskJID renders a JID with all but the last 4 characters of the user
+// replaced, for logs.
+func MaskJID(j JID) string {
+	if j.IsEmpty() {
+		return ""
+	}
+	j.User = maskTail(j.User)
+	return j.String()
+}

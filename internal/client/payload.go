@@ -15,10 +15,6 @@ import (
 	"github.com/mdenesfe/wax/internal/waversion"
 )
 
-// djbKeyType is Signal's type byte for Curve25519 public keys. Serialized
-// Signal public keys are prefixed with it, including when signed.
-const djbKeyType = 0x05
-
 // DeviceConfig describes how this companion presents itself.
 type DeviceConfig struct {
 	Version waversion.Version
@@ -48,15 +44,6 @@ type RegistrationKeys struct {
 	SignedPreKeyID  uint32
 	SignedPreKey    [32]byte
 	SignedPreKeySig [64]byte
-}
-
-// SignPreKey signs a prekey public key the way Signal does: over the
-// type-prefixed serialization 0x05 || pub.
-func SignPreKey(identity *keys.SigningKey, preKeyPub [32]byte) [64]byte {
-	msg := make([]byte, 0, 33)
-	msg = append(msg, djbKeyType)
-	msg = append(msg, preKeyPub[:]...)
-	return identity.Sign(msg)
 }
 
 func basePayload(cfg DeviceConfig) *wa6.ClientPayload {
@@ -111,7 +98,7 @@ func RegistrationPayload(cfg DeviceConfig, k RegistrationKeys) ([]byte, error) {
 	p.Pull = proto.Bool(false)
 	p.DevicePairingData = &wa6.ClientPayload_DevicePairingRegistrationData{
 		ERegid:      regID[:],
-		EKeytype:    []byte{djbKeyType},
+		EKeytype:    []byte{keys.DJBType},
 		EIdent:      k.IdentityKey[:],
 		ESkeyID:     skeyID[1:], // the signed prekey id is sent as 3 bytes
 		ESkeyVal:    k.SignedPreKey[:],

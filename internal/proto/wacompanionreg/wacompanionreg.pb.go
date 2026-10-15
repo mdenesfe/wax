@@ -176,6 +176,83 @@ func (x *DeviceProps) GetHistorySyncConfig() *DeviceProps_HistorySyncConfig {
 	return nil
 }
 
+// Sent by the server in pair-success (<client-props>).
+type ClientPairingProps struct {
+	state                          protoimpl.MessageState `protogen:"open.v1"`
+	IsChatDbLidMigrated            *bool                  `protobuf:"varint,1,opt,name=isChatDbLidMigrated" json:"isChatDbLidMigrated,omitempty"`
+	IsSyncdPureLidSession          *bool                  `protobuf:"varint,2,opt,name=isSyncdPureLidSession" json:"isSyncdPureLidSession,omitempty"`
+	IsSyncdSnapshotRecoveryEnabled *bool                  `protobuf:"varint,3,opt,name=isSyncdSnapshotRecoveryEnabled" json:"isSyncdSnapshotRecoveryEnabled,omitempty"`
+	IsHsThumbnailSyncEnabled       *bool                  `protobuf:"varint,4,opt,name=isHsThumbnailSyncEnabled" json:"isHsThumbnailSyncEnabled,omitempty"`
+	SubscriptionSyncPayload        []byte                 `protobuf:"bytes,5,opt,name=subscriptionSyncPayload" json:"subscriptionSyncPayload,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
+}
+
+func (x *ClientPairingProps) Reset() {
+	*x = ClientPairingProps{}
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientPairingProps) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientPairingProps) ProtoMessage() {}
+
+func (x *ClientPairingProps) ProtoReflect() protoreflect.Message {
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientPairingProps.ProtoReflect.Descriptor instead.
+func (*ClientPairingProps) Descriptor() ([]byte, []int) {
+	return file_wacompanionreg_wacompanionreg_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ClientPairingProps) GetIsChatDbLidMigrated() bool {
+	if x != nil && x.IsChatDbLidMigrated != nil {
+		return *x.IsChatDbLidMigrated
+	}
+	return false
+}
+
+func (x *ClientPairingProps) GetIsSyncdPureLidSession() bool {
+	if x != nil && x.IsSyncdPureLidSession != nil {
+		return *x.IsSyncdPureLidSession
+	}
+	return false
+}
+
+func (x *ClientPairingProps) GetIsSyncdSnapshotRecoveryEnabled() bool {
+	if x != nil && x.IsSyncdSnapshotRecoveryEnabled != nil {
+		return *x.IsSyncdSnapshotRecoveryEnabled
+	}
+	return false
+}
+
+func (x *ClientPairingProps) GetIsHsThumbnailSyncEnabled() bool {
+	if x != nil && x.IsHsThumbnailSyncEnabled != nil {
+		return *x.IsHsThumbnailSyncEnabled
+	}
+	return false
+}
+
+func (x *ClientPairingProps) GetSubscriptionSyncPayload() []byte {
+	if x != nil {
+		return x.SubscriptionSyncPayload
+	}
+	return nil
+}
+
 type DeviceProps_HistorySyncConfig struct {
 	state                                    protoimpl.MessageState `protogen:"open.v1"`
 	FullSyncDaysLimit                        *uint32                `protobuf:"varint,1,opt,name=fullSyncDaysLimit" json:"fullSyncDaysLimit,omitempty"`
@@ -203,7 +280,7 @@ type DeviceProps_HistorySyncConfig struct {
 
 func (x *DeviceProps_HistorySyncConfig) Reset() {
 	*x = DeviceProps_HistorySyncConfig{}
-	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[1]
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -215,7 +292,7 @@ func (x *DeviceProps_HistorySyncConfig) String() string {
 func (*DeviceProps_HistorySyncConfig) ProtoMessage() {}
 
 func (x *DeviceProps_HistorySyncConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[1]
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -377,7 +454,7 @@ type DeviceProps_AppVersion struct {
 
 func (x *DeviceProps_AppVersion) Reset() {
 	*x = DeviceProps_AppVersion{}
-	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[2]
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -389,7 +466,7 @@ func (x *DeviceProps_AppVersion) String() string {
 func (*DeviceProps_AppVersion) ProtoMessage() {}
 
 func (x *DeviceProps_AppVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[2]
+	mi := &file_wacompanionreg_wacompanionreg_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -491,7 +568,13 @@ const file_wacompanionreg_wacompanionreg_proto_rawDesc = "" +
 	"\n" +
 	"\x06SAFARI\x10\x05\x12\b\n" +
 	"\x04EDGE\x10\x06\x12\v\n" +
-	"\aDESKTOP\x10\aB7Z5github.com/mdenesfe/wax/internal/proto/wacompanionreg"
+	"\aDESKTOP\x10\a\"\xba\x02\n" +
+	"\x12ClientPairingProps\x120\n" +
+	"\x13isChatDbLidMigrated\x18\x01 \x01(\bR\x13isChatDbLidMigrated\x124\n" +
+	"\x15isSyncdPureLidSession\x18\x02 \x01(\bR\x15isSyncdPureLidSession\x12F\n" +
+	"\x1eisSyncdSnapshotRecoveryEnabled\x18\x03 \x01(\bR\x1eisSyncdSnapshotRecoveryEnabled\x12:\n" +
+	"\x18isHsThumbnailSyncEnabled\x18\x04 \x01(\bR\x18isHsThumbnailSyncEnabled\x128\n" +
+	"\x17subscriptionSyncPayload\x18\x05 \x01(\fR\x17subscriptionSyncPayloadB7Z5github.com/mdenesfe/wax/internal/proto/wacompanionreg"
 
 var (
 	file_wacompanionreg_wacompanionreg_proto_rawDescOnce sync.Once
@@ -506,17 +589,18 @@ func file_wacompanionreg_wacompanionreg_proto_rawDescGZIP() []byte {
 }
 
 var file_wacompanionreg_wacompanionreg_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wacompanionreg_wacompanionreg_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_wacompanionreg_wacompanionreg_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_wacompanionreg_wacompanionreg_proto_goTypes = []any{
 	(DeviceProps_PlatformType)(0),         // 0: wax.wacompanionreg.DeviceProps.PlatformType
 	(*DeviceProps)(nil),                   // 1: wax.wacompanionreg.DeviceProps
-	(*DeviceProps_HistorySyncConfig)(nil), // 2: wax.wacompanionreg.DeviceProps.HistorySyncConfig
-	(*DeviceProps_AppVersion)(nil),        // 3: wax.wacompanionreg.DeviceProps.AppVersion
+	(*ClientPairingProps)(nil),            // 2: wax.wacompanionreg.ClientPairingProps
+	(*DeviceProps_HistorySyncConfig)(nil), // 3: wax.wacompanionreg.DeviceProps.HistorySyncConfig
+	(*DeviceProps_AppVersion)(nil),        // 4: wax.wacompanionreg.DeviceProps.AppVersion
 }
 var file_wacompanionreg_wacompanionreg_proto_depIdxs = []int32{
-	3, // 0: wax.wacompanionreg.DeviceProps.version:type_name -> wax.wacompanionreg.DeviceProps.AppVersion
+	4, // 0: wax.wacompanionreg.DeviceProps.version:type_name -> wax.wacompanionreg.DeviceProps.AppVersion
 	0, // 1: wax.wacompanionreg.DeviceProps.platformType:type_name -> wax.wacompanionreg.DeviceProps.PlatformType
-	2, // 2: wax.wacompanionreg.DeviceProps.historySyncConfig:type_name -> wax.wacompanionreg.DeviceProps.HistorySyncConfig
+	3, // 2: wax.wacompanionreg.DeviceProps.historySyncConfig:type_name -> wax.wacompanionreg.DeviceProps.HistorySyncConfig
 	3, // [3:3] is the sub-list for method output_type
 	3, // [3:3] is the sub-list for method input_type
 	3, // [3:3] is the sub-list for extension type_name
@@ -535,7 +619,7 @@ func file_wacompanionreg_wacompanionreg_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wacompanionreg_wacompanionreg_proto_rawDesc), len(file_wacompanionreg_wacompanionreg_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

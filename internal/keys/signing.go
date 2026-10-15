@@ -144,3 +144,16 @@ func VerifySlice(pub, msg, sig []byte) bool {
 	}
 	return Verify([KeySize]byte(pub), msg, [SignatureSize]byte(sig))
 }
+
+// DJBType is Signal's type byte for Curve25519 public keys. Serialized Signal
+// public keys are 0x05 || key.
+const DJBType = 0x05
+
+// SignPublicKey signs another public key in Signal's serialized form
+// (0x05 || pub), as done for signed prekeys.
+func (sk *SigningKey) SignPublicKey(pub [KeySize]byte) [SignatureSize]byte {
+	msg := make([]byte, 0, 1+KeySize)
+	msg = append(msg, DJBType)
+	msg = append(msg, pub[:]...)
+	return sk.Sign(msg)
+}

@@ -130,7 +130,7 @@ func parseServiceWorker(body []byte) (Version, error) {
 }
 
 // Watch polls FetchLatest every interval until ctx ends and calls onChange
-// (and logs a warning) whenever the live version differs from the one in
+// (and logs a warning) whenever the live version is newer than the one in
 // use. current returns the version currently in use, so a caller that hot
 // swaps the version stops getting notified.
 func Watch(ctx context.Context, log *slog.Logger, client *http.Client, interval time.Duration, current func() Version, onChange func(latest Version)) {
@@ -142,8 +142,10 @@ func Watch(ctx context.Context, log *slog.Logger, client *http.Client, interval 
 			}
 			return
 		}
-		if cur := current(); latest != cur {
-			log.Warn("WhatsApp Web version changed", "in_use", cur.String(), "latest", latest.String())
+		// Only newer versions count: during a staged rollout different edge
+		// servers return different revisions, so "different" alone flaps.
+		if cur := current(); cur.Less(latest) {
+			log.Warn("newer WhatsApp Web version available", "in_use", cur.String(), "latest", latest.String())
 			if onChange != nil {
 				onChange(latest)
 			}

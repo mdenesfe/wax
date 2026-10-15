@@ -54,3 +54,12 @@ message DeviceProps {
 	optional bool requireFullSync = 4;
 	optional HistorySyncConfig historySyncConfig = 5;
 }
+
+// Sent by the server in pair-success (<client-props>).
+message ClientPairingProps {
+	optional bool isChatDbLidMigrated = 1;
+	optional bool isSyncdPureLidSession = 2;
+	optional bool isSyncdSnapshotRecoveryEnabled = 3;
+	optional bool isHsThumbnailSyncEnabled = 4;
+	optional bytes subscriptionSyncPayload = 5;
+}

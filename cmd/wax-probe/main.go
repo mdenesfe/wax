@@ -94,7 +94,7 @@ func run(ctx context.Context, log *slog.Logger, versionFlag string, checkVersion
 		IdentityKey:     identity.Pub,
 		SignedPreKeyID:  1,
 		SignedPreKey:    signedPreKey.Pub,
-		SignedPreKeySig: client.SignPreKey(identity, signedPreKey.Pub),
+		SignedPreKeySig: identity.SignPublicKey(signedPreKey.Pub),
 	})
 	if err != nil {
 		return err

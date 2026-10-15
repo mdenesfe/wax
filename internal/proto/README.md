@@ -10,7 +10,8 @@ One directory per WhatsApp Web protobuf module:
 |------------------|-----------------------|--------------------------------------------------|
 | `wa6`            | `WAWebProtobufsWa6`   | Noise handshake messages, `ClientPayload`        |
 | `wacert`         | `WACert`              | Noise server certificate chain                   |
-| `wacompanionreg` | `WACompanionReg`      | `DeviceProps` (linked device registration)       |
+| `wacompanionreg` | `WACompanionReg`      | `DeviceProps`, `ClientPairingProps`               |
+| `waadv`          | `WAAdv`               | Pairing identity attestation (ADV)               |
 
 These are **subsets** of the official schemas. Only fields this project reads
 or writes are declared. Undeclared fields received from the server are kept as

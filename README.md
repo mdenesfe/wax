@@ -12,7 +12,7 @@ standard library only (`crypto/ecdh`, `crypto/ed25519`, `crypto/aes`,
 | Phase | Scope | State |
 |-------|-------|-------|
 | 1 | Transport, Noise handshake, binary nodes | ✅ done |
-| 2 | QR pairing, persistent identity (PostgreSQL) | — |
+| 2 | QR pairing, persistent identity (PostgreSQL) | ✅ done |
 | 3 | Signal protocol, 1:1 text messages | — |
 | 4 | Groups, media, receipts, presence, calls | — |
 | 5 | History sync, app state sync | — |
@@ -21,27 +21,48 @@ standard library only (`crypto/ecdh`, `crypto/ed25519`, `crypto/aes`,
 ## Layout
 
 ```
-cmd/wax-probe        Phase 1 tool: handshake + node logging
+cmd/wax             runs one linked-device instance (QR pairing, reconnects)
+cmd/wax-probe       Phase 1 tool: raw handshake + node logging
 internal/keys        X25519 key pairs, libsignal-compatible Curve25519 signatures
 internal/transport   framing, WebSocket, Noise XX handshake, cert chain, encrypted conn
 internal/binary      binary XML nodes: tokens, JIDs, encoder/decoder, masked formatting
 internal/proto       protobuf schemas + generated code (see internal/proto/README.md)
 internal/waversion   client version, live version detection
-internal/client      client payloads, disconnect classification, node connection
+internal/client      session lifecycle: connect loop, backoff, keepalive, pairing, prekeys
+internal/pairing     QR content/rendering, pair-success verification
+internal/store       PostgreSQL persistence, secrets sealed with WAX_MASTER_KEY
+internal/testutil    fake WhatsApp server for end-to-end tests
 ```
 
 ## Requirements
 
-- Go 1.24+ (for `crypto/hkdf`)
+- Go 1.25+ (pgx v5.11 requires it; `crypto/hkdf` needs 1.24)
+- Docker (for the development PostgreSQL)
 - protoc + protoc-gen-go, only when changing `.proto` files
 
-## Try it
+## Running
 
 ```bash
-go test -race ./...
-go run ./cmd/wax-probe -debug -duration 60s
+docker compose up -d                      # PostgreSQL on 127.0.0.1:5433
+cp .env.example .env                      # then set WAX_MASTER_KEY=$(openssl rand -base64 32)
+set -a; source .env; set +a
+go run ./cmd/wax -instance test           # shows a QR code on first start
 ```
 
-The probe connects as a new, unpaired device with throwaway keys, completes
-the handshake and logs every node. Binary payloads and JIDs are masked
-unless you pass `-unmask`.
+After pairing, restarting the same command logs in without a QR code.
+Useful flags: `-debug -dump-nodes` (masked node log), `-qr-png qr.png`,
+`-version 2.3000.X`.
+
+`WAX_MASTER_KEY` encrypts all private keys at rest. Keep it outside the
+database backups; losing it means re-pairing every instance.
+
+## Tests
+
+```bash
+go test -race ./...                       # unit tests; DB tests are skipped
+WAX_TEST_DATABASE_URL=postgres://wax:wax@127.0.0.1:5433/wax_test?sslmode=disable go test -race ./...
+```
+
+The second form also runs the store tests and the end-to-end client tests
+against an in-process fake WhatsApp server (pairing, 515 restart, login,
+prekey upload, logout, keepalive timeout).

@@ -1,0 +1,20 @@
+# Development database. Start with: docker compose up -d
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: wax
+      POSTGRES_PASSWORD: wax
+      POSTGRES_DB: wax
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - wax-pg:/var/lib/postgresql/data
+      - ./scripts/pg-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wax"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  wax-pg:
