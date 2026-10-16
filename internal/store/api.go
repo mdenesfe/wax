@@ -401,3 +401,18 @@ func (s *Store) GetMessage(ctx context.Context, instance, chat, id string) (*Sto
 	}
 	return &m, nil
 }
+
+// RetargetWebhooks applies a webhook URL change to the pending events of an
+// instance: without a URL they are dropped (marked dead), with a new one
+// they become due at once instead of waiting for their backoff.
+func (s *Store) RetargetWebhooks(ctx context.Context, instance string, removed bool) (int64, error) {
+	q := `UPDATE wax_webhook_queue SET next_attempt_at = now() WHERE instance_id = $1 AND status = 'pending'`
+	if removed {
+		q = `UPDATE wax_webhook_queue SET status = 'dead', last_error = 'webhook url removed' WHERE instance_id = $1 AND status = 'pending'`
+	}
+	tag, err := s.db.Exec(ctx, q, instance)
+	if err != nil {
+		return 0, fmt.Errorf("store: retarget webhooks: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

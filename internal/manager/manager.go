@@ -359,14 +359,32 @@ func (m *Manager) runningCount() int {
 	return len(m.instances)
 }
 
-// Update changes an instance's webhook and rate settings.
+// Update changes an instance's webhook and rate settings. When the webhook
+// URL changes, pending events follow at once: dropped if it was removed,
+// retried right away if it points elsewhere.
 func (m *Manager) Update(ctx context.Context, in *Instance, cfg store.Instance) error {
+	old := in.Config().WebhookURL
 	if err := m.store.UpdateInstance(ctx, &cfg); err != nil {
 		return err
 	}
 	in.cfgMu.Lock()
 	in.cfg.WebhookURL, in.cfg.WebhookSecret, in.cfg.RatePerMinute = cfg.WebhookURL, cfg.WebhookSecret, cfg.RatePerMinute
 	in.cfgMu.Unlock()
+	// Without a URL, pending events are always dropped (idempotent), also
+	// ones left from before the URL was removed.
+	if cfg.WebhookURL == old && cfg.WebhookURL != "" {
+		return nil
+	}
+	n, err := m.store.RetargetWebhooks(ctx, in.ID, cfg.WebhookURL == "")
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		in.log.Info("pending webhook events retargeted", "count", n, "dropped", cfg.WebhookURL == "")
+	}
+	if in.running {
+		kick(in.hookKick)
+	}
 	return nil
 }
 
