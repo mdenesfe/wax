@@ -91,10 +91,12 @@ func TestOpenAPIContract(t *testing.T) {
 		"APIKey": store.APIKey{}, "APIKeyCreated": apiKeyCreated{},
 		"Instance": instanceJSON{}, "InstanceCreate": instanceRequest{}, "InstancePatch": instancePatch{},
 		"SendRequest": sendRequest{}, "MediaUpload": mediaRequest{}, "SendResponse": sendResponse{}, "OutboxItem": outboxJSON{},
-		"Chat": store.Chat{}, "Message": manager.MessageJSON{}, "Media": manager.MediaJSON{}, "Reaction": manager.ReactionJSON{},
+		"Chat": chatJSON{}, "Message": manager.MessageJSON{}, "Media": manager.MediaJSON{}, "Reaction": manager.ReactionJSON{},
 		"MarkRead": markReadRequest{}, "Presence": presenceRequest{}, "RejectCall": rejectCallRequest{},
-		"GroupInfo": client.GroupInfo{}, "GroupParticipant": client.GroupParticipant{},
-		"WebhookEnvelope": manager.Envelope{},
+		"GroupInfo": groupJSON{}, "GroupParticipant": participantJSON{},
+		"WebhookEnvelope": manager.Envelope{}, "ForwardRequest": forwardRequest{},
+		"Person": manager.PersonJSON{}, "Quoted": manager.QuotedJSON{}, "Stub": manager.StubJSON{}, "GroupSummary": groupSummary{},
+		"Profile": profileJSON{}, "GroupRef": groupRef{}, "Business": client.Business{}, "BusinessHours": client.BusinessHours{},
 	}
 	for name, v := range types {
 		sch, ok := s.Comp.Schemas[name]
@@ -132,6 +134,10 @@ func jsonFields(t reflect.Type) []string {
 	var out []string
 	for i := range t.NumField() {
 		f := t.Field(i)
+		if f.Anonymous {
+			out = append(out, jsonFields(f.Type)...)
+			continue
+		}
 		if !f.IsExported() {
 			continue
 		}
@@ -145,7 +151,7 @@ func jsonFields(t reflect.Type) []string {
 		out = append(out, name)
 	}
 	slices.Sort(out)
-	return out
+	return slices.Compact(out) // a field shadowing an embedded one appears once
 }
 
 // TestOpenAPIServed: the document is served without authentication.

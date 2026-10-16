@@ -73,6 +73,28 @@ Everything else is a flag of `wax serve`: `-listen` (default
 host or a private network; refused by default to prevent SSRF). Logs are
 JSON on stderr; SIGINT/SIGTERM shut down gracefully.
 
+### Admin interface
+
+`http://<listen>/` opens **wax admin**, a minimal web interface (embedded in
+the binary, no build step). Sign in with the admin key to manage tenants,
+limits and keys, or with a tenant key to work with WhatsApp accounts. The
+sidebar lists the accounts with their status and adds new ones (a name,
+then the QR code to scan). Each account opens as a WhatsApp Desktop-like
+window: a rail for chats, status
+and settings; a resizable chat list with pinned and archived chats,
+filters, previews and profile pictures; conversations with inline images;
+replies, mentions, forwarding, view once markers and system messages;
+photos, videos, documents and voice messages to send (attach, paste, drop
+or record) and to play inline; a
+status viewer (last 24 hours); communities with their groups; and link by
+QR code. People are shown as
+WhatsApp does: address book name, otherwise number, `~push name` and
+`@username`, with a contact's phone-number and LID chats merged into one.
+The key is kept in
+`sessionStorage` (gone when the tab closes); a strict Content-Security-Policy
+allows only the interface's own files, and server data is always inserted
+as text, never as HTML.
+
 ### API contract
 
 `GET /openapi.json` serves the OpenAPI 3.1 description of every endpoint,
@@ -185,13 +207,16 @@ All routes below use a tenant key.
 | `GET /v1/instances`, `GET/PATCH/DELETE /v1/instances/{id}` | list, status, update, logout + delete |
 | `POST /v1/instances/{id}/connect` | start a new pairing after logout |
 | `GET /v1/instances/{id}/qr` | current QR (`?format=png` for an image) |
-| `POST /v1/instances/{id}/messages` | queue `{to, text}` or `{to, media:{kind, mimetype, caption, file_name, data_base64}}`; `client_id` makes it idempotent |
+| `POST /v1/instances/{id}/messages` | queue `{to, text}` or `{to, media:{kind, mimetype, caption, file_name, data_base64}}` (optional previews: `thumbnail_base64`, `width`, `height`, `seconds`, `waveform_base64`; voice notes recorded as WebM are converted to Ogg Opus), optionally with `reply_to` (a message id) and `mentions` (users, with `@<number>` in the text); or `{to, forward:{chat, message_id}}`; `client_id` makes it idempotent |
 | `GET /v1/instances/{id}/outbox/{oid}` | send status |
 | `GET /v1/instances/{id}/chats` | chats (`limit`, `offset`) |
-| `GET /v1/instances/{id}/chats/{chat}/messages` | messages (`limit`, `before` RFC 3339) |
+| `GET /v1/instances/{id}/chats/{chat}/messages` | messages (`limit`, `before` RFC 3339, `types` e.g. `image,video`) |
 | `GET …/messages/{mid}/media` | download and decrypt a media message |
+| `GET /v1/instances/{id}/chats/{chat}/picture` | profile picture of a contact or group (404 if none or hidden) |
+| `GET /v1/instances/{id}/chats/{chat}/profile` | everything known about a contact: names, number, LID, about, devices, business profile, groups in common, message counts (WhatsApp allows only a few lookups in a row) |
 | `POST /v1/instances/{id}/read`, `/presence` | read receipts, availability |
-| `GET /v1/instances/{id}/groups/{group}` | group metadata |
+| `GET /v1/instances/{id}/groups` | joined groups and communities (community links, announcement groups) |
+| `GET /v1/instances/{id}/groups/{group}` | group metadata, participants with names |
 | `POST /v1/instances/{id}/calls/{call}/reject` | reject an incoming call |
 
 `to` is a phone number (digits, optional `+`) or a JID. Webhooks are POSTed

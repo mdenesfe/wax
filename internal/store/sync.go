@@ -129,11 +129,19 @@ func (s *Store) PutAppStateMAC(ctx context.Context, instanceID, collection strin
 
 // --- contacts and chats -------------------------------------------------------------
 
+// ContactName is an address book entry (app state).
+type ContactName struct {
+	First, Full string
+	// Username is the contact's WhatsApp username (without "@"), if any.
+	Username string
+}
+
 // PutContactName stores names from the address book (app state).
-func (s *Store) PutContactName(ctx context.Context, instanceID, jid, firstName, fullName string) error {
-	_, err := s.db.Exec(ctx, `INSERT INTO wax_contacts (instance_id, jid, first_name, full_name) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (instance_id, jid) DO UPDATE SET first_name = excluded.first_name, full_name = excluded.full_name, updated_at = now()`,
-		instanceID, jid, firstName, fullName)
+func (s *Store) PutContactName(ctx context.Context, instanceID, jid string, n ContactName) error {
+	_, err := s.db.Exec(ctx, `INSERT INTO wax_contacts (instance_id, jid, first_name, full_name, username) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (instance_id, jid) DO UPDATE SET first_name = excluded.first_name, full_name = excluded.full_name,
+			username = excluded.username, updated_at = now()`,
+		instanceID, jid, n.First, n.Full, n.Username)
 	if err != nil {
 		return fmt.Errorf("store: put contact: %w", err)
 	}
@@ -195,7 +203,7 @@ type StoredMessage struct {
 	FromMe           bool
 	SentAt           time.Time
 	PushName, Type   string
-	Content          []byte // serialized wae2e.Message
+	Content          []byte // serialized wae2e.Message; for "stub:<n>" types, the JSON array of the stub parameters
 	Source           string
 }
 
@@ -214,11 +222,15 @@ func (s *Store) PutMessage(ctx context.Context, instanceID string, m *StoredMess
 	return nil
 }
 
-// Messages lists a chat's messages, newest first, before the given time.
-func (s *Store) Messages(ctx context.Context, instanceID, chat string, before time.Time, limit int) ([]StoredMessage, error) {
-	rows, err := s.db.Query(ctx, `SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
-		FROM wax_messages WHERE instance_id = $1 AND chat = $2 AND sent_at < $3 ORDER BY sent_at DESC LIMIT $4`,
-		instanceID, chat, before, limit)
+// Messages lists a chat's messages, newest first, before the given time;
+// types, if given, keeps only those message types (e.g. "image").
+func (s *Store) Messages(ctx context.Context, instanceID, chat string, before time.Time, limit int, types ...string) ([]StoredMessage, error) {
+	rows, err := s.db.Query(ctx, aliasCTE+`
+		SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
+		FROM wax_messages WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) AND sent_at < $3
+			AND (COALESCE(cardinality($5::text[]), 0) = 0 OR type = ANY($5))
+		ORDER BY sent_at DESC LIMIT $4`,
+		instanceID, chat, before, limit, types)
 	if err != nil {
 		return nil, fmt.Errorf("store: list messages: %w", err)
 	}
@@ -238,6 +250,24 @@ func (s *Store) Messages(ctx context.Context, instanceID, chat string, before ti
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// MessageTypes counts a chat's stored messages by type (under either
+// address of a contact).
+func (s *Store) MessageTypes(ctx context.Context, instanceID, chat string) (map[string]int, error) {
+	rows, err := s.db.Query(ctx, aliasCTE+`SELECT type, count(*) FROM wax_messages
+		WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) GROUP BY type`, instanceID, chat)
+	if err != nil {
+		return nil, fmt.Errorf("store: message types: %w", err)
+	}
+	out := map[string]int{}
+	var typ string
+	var n int
+	_, err = pgx.ForEachRow(rows, []any{&typ, &n}, func() error {
+		out[typ] = n
+		return nil
+	})
+	return out, err
 }
 
 // CountMessages returns the number of stored messages (all chats).
@@ -342,6 +372,16 @@ type Chat struct {
 	Archived      bool       `json:"archived"`
 	Pinned        bool       `json:"pinned"`
 	MutedUntil    *time.Time `json:"muted_until,omitempty"`
+	// Phone is the contact's phone number (digits) for 1:1 chats, also
+	// when the chat is addressed by LID and the mapping is known.
+	Phone string `json:"phone,omitempty"`
+	// PushName and Username are the contact's own display name and
+	// WhatsApp username (without "@") of a 1:1 chat, if known.
+	PushName string `json:"push_name,omitempty"`
+	Username string `json:"username,omitempty"`
+	// Last is the newest message worth showing in a chat list (protocol
+	// and reaction messages are skipped); only ListChats fills it.
+	Last *StoredMessage `json:"-"`
 }
 
 const chatColumns = `jid, name, last_message_at, unread_count, archived, pinned, muted_until`

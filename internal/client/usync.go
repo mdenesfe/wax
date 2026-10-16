@@ -23,6 +23,12 @@ func (s *session) usync(ctx context.Context, users []wabin.JID, mode, purpose st
 	for i, u := range users {
 		list[i] = wabin.Node{Tag: "user", Attrs: wabin.Attrs{"jid": u.ToNonAD()}}
 	}
+	return s.usyncList(ctx, list, mode, purpose, query)
+}
+
+// usyncList is usync with prepared <user> elements (which may carry
+// per-user content, like a privacy token).
+func (s *session) usyncList(ctx context.Context, list []wabin.Node, mode, purpose string, query []wabin.Node) (*wabin.Node, error) {
 	resp, err := s.sendIQ(ctx, wabin.Node{
 		Tag:   "iq",
 		Attrs: wabin.Attrs{"to": wabin.ServerJID, "type": "get", "xmlns": "usync"},

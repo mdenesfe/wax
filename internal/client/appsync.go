@@ -257,13 +257,14 @@ func (c *Client) applyMutation(ctx context.Context, s *session, tx *store.Store,
 	switch m.Index[0] {
 	case "contact":
 		ca := a.GetContactAction()
-		if err := tx.PutContactName(ctx, inst, jid, ca.GetFirstName(), ca.GetFullName()); err != nil {
+		n := store.ContactName{First: ca.GetFirstName(), Full: ca.GetFullName(), Username: ca.GetUsername()}
+		if err := tx.PutContactName(ctx, inst, jid, n); err != nil {
 			return err
 		}
 		return storeLIDMapping(ctx, tx, inst, ca.GetPnJID(), ca.GetLidJID())
 	case "lid_contact":
 		la := a.GetLidContactAction()
-		return tx.PutContactName(ctx, inst, jid, la.GetFirstName(), la.GetFullName())
+		return tx.PutContactName(ctx, inst, jid, store.ContactName{First: la.GetFirstName(), Full: la.GetFullName(), Username: la.GetUsername()})
 	case "mute":
 		until := muteUntil(a.GetMuteAction())
 		return tx.UpdateChat(ctx, inst, jid, store.ChatUpdate{MutedUntil: &until})

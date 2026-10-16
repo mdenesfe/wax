@@ -146,10 +146,15 @@ func (c *Client) sendDirect(ctx context.Context, s *session, to wabin.JID, id st
 	if includeIdentity {
 		content = append(content, wabin.Node{Tag: "device-identity", Content: s.dev.Account})
 	}
+	if t := c.privacyToken(ctx, to); t != nil {
+		content = append(content, wabin.Node{Tag: "tctoken", Content: t})
+	}
 	res, err := s.sendMessageNode(ctx, wabin.Node{Tag: "message", Attrs: attrs, Content: content}, id, to)
 	if err != nil {
 		return res.result(), err
 	}
+	// Writing to someone gives them our privacy token (once a week).
+	s.goSafe("issue-privacy-token", func() { c.issueToken(s.ctx, s, to) })
 	c.storeLiveMessage(ctx, to, ownDevice, id, true, res.Timestamp, "", msg)
 	if res.phash != "" && res.phash != participantListHash(devices) {
 		s.log.Warn("server device list differs from ours; refreshing", "chat", wabin.MaskJID(to))

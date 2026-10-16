@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -362,31 +363,152 @@ func (s *Store) WebhookBacklog(ctx context.Context, instance string) (int, error
 
 // --- chats --------------------------------------------------------------------------
 
-// ListChats returns chats by most recent activity.
-func (s *Store) ListChats(ctx context.Context, instance string, limit, offset int) ([]Chat, error) {
-	rows, err := s.db.Query(ctx, `SELECT `+chatColumns+` FROM wax_chats WHERE instance_id = $1
-		ORDER BY last_message_at DESC NULLS LAST, jid LIMIT $2 OFFSET $3`, instance, limit, offset)
+// aliasCTE defines "alias": the chat $2 of instance $1 and, for a 1:1
+// chat, the contact's other address (phone number or LID). A contact's
+// chat may be stored under both; its history is the union.
+const aliasCTE = `
+		WITH alias AS (
+			SELECT $2::text AS jid
+			UNION SELECT m.pn_user || '@s.whatsapp.net' FROM wax_lid_map m
+				WHERE $2 LIKE '%@lid' AND m.instance_id = $1 AND m.lid_user = split_part($2, '@', 1)
+			UNION SELECT m.lid_user || '@lid' FROM wax_lid_map m
+				WHERE $2 LIKE '%@s.whatsapp.net' AND m.instance_id = $1 AND m.pn_user = split_part($2, '@', 1)
+		)
+`
+
+// identityJoin resolves the user behind the (device-less) JID in column
+// {jid} of instance {inst}: its phone number (from the JID itself or the
+// LID mapping), its LID, and the names stored under either address: p.phone,
+// p.lid, ct.full_name (address book), ct.push_name, ct.username.
+var identityJoin = strings.NewReplacer("{jid}", "%[1]s", "{inst}", "%[2]s").Replace(`
+		CROSS JOIN LATERAL (
+			SELECT CASE
+				WHEN {jid} LIKE '%%@s.whatsapp.net' THEN split_part({jid}, '@', 1)
+				WHEN {jid} LIKE '%%@lid' THEN (SELECT m.pn_user FROM wax_lid_map m
+					WHERE m.instance_id = {inst} AND m.lid_user = split_part({jid}, '@', 1)
+					ORDER BY m.updated_at DESC LIMIT 1)
+			END AS phone, CASE
+				WHEN {jid} LIKE '%%@lid' THEN split_part({jid}, '@', 1)
+				WHEN {jid} LIKE '%%@s.whatsapp.net' THEN (SELECT m.lid_user FROM wax_lid_map m
+					WHERE m.instance_id = {inst} AND m.pn_user = split_part({jid}, '@', 1))
+			END AS lid
+		) p
+		CROSS JOIN LATERAL (
+			SELECT COALESCE(max(NULLIF(full_name, '')), '') AS full_name, COALESCE(max(NULLIF(push_name, '')), '') AS push_name,
+			       COALESCE(max(NULLIF(username, '')), '') AS username
+			FROM wax_contacts ct
+			WHERE ct.instance_id = {inst} AND ct.jid IN ({jid}, p.phone || '@s.whatsapp.net', p.lid || '@lid')
+		) ct`)
+
+// Identity is what is known about a user across its phone number and LID.
+type Identity struct {
+	Phone    string // digits
+	LID      string // LID user, if known
+	Name     string // from the address book
+	PushName string // chosen by the user
+	Username string // WhatsApp username, without "@"
+}
+
+// Identities resolves user JIDs (without device) to what is known about
+// them; unknown users map to an empty Identity. One query for all.
+func (s *Store) Identities(ctx context.Context, instance string, jids []string) (map[string]Identity, error) {
+	out := make(map[string]Identity, len(jids))
+	if len(jids) == 0 {
+		return out, nil
+	}
+	rows, err := s.db.Query(ctx, `SELECT u.jid, COALESCE(p.phone, ''), COALESCE(p.lid, ''), ct.full_name, ct.push_name, ct.username
+		FROM unnest($2::text[]) AS u(jid)`+fmt.Sprintf(identityJoin, "u.jid", "$1"), instance, jids)
 	if err != nil {
-		return nil, fmt.Errorf("store: list chats: %w", err)
+		return nil, fmt.Errorf("store: identities: %w", err)
 	}
 	defer rows.Close()
-	var out []Chat
 	for rows.Next() {
-		c, err := scanChat(rows)
-		if err != nil {
-			return nil, err
+		var jid string
+		var id Identity
+		if err := rows.Scan(&jid, &id.Phone, &id.LID, &id.Name, &id.PushName, &id.Username); err != nil {
+			return nil, fmt.Errorf("store: identities: %w", err)
 		}
-		out = append(out, *c)
+		out[jid] = id
 	}
 	return out, rows.Err()
 }
 
-// GetMessage returns one stored message.
+// ListChats returns chats by most recent activity. A 1:1 chat is named
+// after the address book; its phone number, push name and username come
+// from either of the contact's addresses.
+func (s *Store) ListChats(ctx context.Context, instance string, limit, offset int) ([]Chat, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT c.jid, COALESCE(NULLIF(c.name, ''), ct.full_name), ct.push_name, ct.username,
+		       c.last_message_at, c.unread_count, c.archived, c.pinned, c.muted_until, COALESCE(p.phone, ''),
+		       lm.message_id, lm.sender, lm.from_me, lm.sent_at, lm.push_name, lm.type, lm.content, lm.source
+		FROM wax_chats c`+fmt.Sprintf(identityJoin, "c.jid", "c.instance_id")+`
+		LEFT JOIN LATERAL (
+			SELECT message_id, sender, from_me, sent_at, push_name, type, content, source FROM wax_messages m
+			WHERE m.instance_id = c.instance_id AND m.chat = c.jid AND m.type NOT IN ('protocol', 'reaction')
+			ORDER BY m.sent_at DESC LIMIT 1
+		) lm ON true
+		WHERE c.instance_id = $1
+		ORDER BY c.last_message_at DESC NULLS LAST, c.jid LIMIT $2 OFFSET $3`, instance, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("store: list chats: %w", err)
+	}
+	chats, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Chat, error) {
+		var c Chat
+		var id, sender, pushName, typ, source *string
+		var fromMe *bool
+		var sentAt *time.Time
+		var enc []byte
+		err := r.Scan(&c.JID, &c.Name, &c.PushName, &c.Username, &c.LastMessageAt, &c.UnreadCount, &c.Archived, &c.Pinned, &c.MutedUntil, &c.Phone,
+			&id, &sender, &fromMe, &sentAt, &pushName, &typ, &enc, &source)
+		if err != nil || id == nil {
+			return c, err
+		}
+		c.Last = &StoredMessage{Chat: c.JID, ID: *id, Sender: *sender, FromMe: *fromMe, SentAt: *sentAt, PushName: *pushName, Type: *typ, Source: *source}
+		if enc != nil {
+			c.Last.Content, err = s.sealer.open(enc, adFor(msgTable, "content", instance, c.JID, *id))
+		}
+		return c, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: list chats: %w", err)
+	}
+	return mergeAliases(chats), nil
+}
+
+// mergeAliases folds the chats of one contact stored under both of its
+// addresses (phone number and LID) into one: the most recent one, which
+// comes first, keeps its address; unread counts add up. O(n).
+func mergeAliases(chats []Chat) []Chat {
+	first := make(map[string]int, len(chats)) // phone → index in out
+	out := chats[:0]
+	for _, c := range chats {
+		if c.Phone == "" {
+			out = append(out, c)
+			continue
+		}
+		i, seen := first[c.Phone]
+		if !seen {
+			first[c.Phone] = len(out)
+			out = append(out, c)
+			continue
+		}
+		m := &out[i]
+		m.UnreadCount += c.UnreadCount
+		m.Pinned = m.Pinned || c.Pinned
+		if m.Name == "" {
+			m.Name = c.Name
+		}
+	}
+	return out
+}
+
+// GetMessage returns one stored message of a chat (under either address
+// of a contact).
 func (s *Store) GetMessage(ctx context.Context, instance, chat, id string) (*StoredMessage, error) {
 	var m StoredMessage
 	var enc []byte
-	err := s.db.QueryRow(ctx, `SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
-		FROM wax_messages WHERE instance_id = $1 AND chat = $2 AND message_id = $3`, instance, chat, id).Scan(
+	err := s.db.QueryRow(ctx, aliasCTE+`SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
+		FROM wax_messages WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) AND message_id = $3 LIMIT 1`, instance, chat, id).Scan(
 		&m.Chat, &m.ID, &m.Sender, &m.FromMe, &m.SentAt, &m.PushName, &m.Type, &enc, &m.Source)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

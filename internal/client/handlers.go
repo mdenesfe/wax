@@ -232,6 +232,7 @@ func (s *session) handleSuccess(n *wabin.Node) {
 		if err := s.c.cfg.Store.PurgeOld(s.ctx, s.c.cfg.InstanceID, 30*24*time.Hour, 7*24*time.Hour); err != nil {
 			s.log.Warn("purging old buffers failed", "error", err)
 		}
+		s.c.pruneTokens(s.ctx)
 		if err := s.c.ensurePreKeys(s.ctx, s); err != nil {
 			s.log.Warn("prekey maintenance failed; will retry on next connect", "error", err)
 		}
@@ -283,9 +284,19 @@ func (s *session) handleNotification(n *wabin.Node) {
 		s.onPreKeyCount(n)
 	case typ == "encrypt" && from.User != "" && n.HasChild("identity"):
 		s.onIdentityChange(n, from)
-	case slices.Contains([]string{"disappearing_mode", "mex", "picture", "status", "privacy_token"}, typ):
+	case typ == "privacy_token":
+		s.onPrivacyToken(n)
+	case typ == "picture":
+		// A profile or group picture changed: look it up again.
+		s.c.pictures.invalidate(from.ToNonAD())
+		s.ack(n)
+	case typ == "status":
+		// The about text changed.
+		s.c.profiles.invalidate(from.ToNonAD())
+		s.ack(n)
+	case slices.Contains([]string{"disappearing_mode", "mex"}, typ):
 		// Informational for us; acknowledged so they stop occupying the
-		// offline queue. (privacy_token storage is future work.)
+		// offline queue.
 		s.log.Debug("notification acknowledged", "type", typ)
 		s.ack(n)
 	default:

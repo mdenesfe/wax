@@ -72,6 +72,7 @@ type Message struct {
 	Message    *wae2e.Message // content with wrappers (device sent, ephemeral, ...) removed
 	Raw        *wae2e.Message // as decrypted
 	RetryCount int
+	ViewOnce   bool // sent as "view once"
 }
 
 // UndecryptableMessage reports a message we could not decrypt. A retry

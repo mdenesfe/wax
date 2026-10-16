@@ -459,7 +459,9 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 			evt.Info.Chat = dest
 		}
 	}
-	evt.Message = unwrapMessage(evt.Message)
+	// Stored with its wrappers, so "view once" is not lost.
+	stored := evt.Message
+	evt.Message, evt.ViewOnce = Unwrap(evt.Message)
 
 	// Protocol messages from our own primary device carry sync data. Only
 	// trust them from our own account. They are stored before returning so
@@ -487,7 +489,7 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 		}
 	}
 	if pm := evt.Message.GetProtocolMessage(); pm == nil || pm.GetType() == wae2e.ProtocolMessage_REVOKE || pm.GetType() == wae2e.ProtocolMessage_MESSAGE_EDIT {
-		s.c.storeLiveMessage(s.ctx, evt.Info.Chat, info.Sender, info.ID, info.IsFromMe, info.Timestamp, info.PushName, evt.Message)
+		s.c.storeLiveMessage(s.ctx, evt.Info.Chat, info.Sender, info.ID, info.IsFromMe, info.Timestamp, info.PushName, stored)
 	}
 	if sender := info.Sender.ToNonAD().String(); info.PushName != "" && !info.IsFromMe && !s.c.nameSeen.unchanged(sender, info.PushName) {
 		if err := s.c.cfg.Store.PutPushName(s.ctx, s.c.cfg.InstanceID, sender, info.PushName); err != nil {
@@ -501,25 +503,35 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 
 // unwrapMessage strips wrapper containers (ephemeral, view once, ...).
 func unwrapMessage(m *wae2e.Message) *wae2e.Message {
+	inner, _ := Unwrap(m)
+	return inner
+}
+
+// Unwrap strips wrapper containers (ephemeral, view once, document with
+// caption) and reports whether the content was sent as view once (by its
+// wrapper or the media's own flag).
+func Unwrap(m *wae2e.Message) (inner *wae2e.Message, viewOnce bool) {
 	for range 4 {
-		var inner *wae2e.Message
+		var next *wae2e.Message
 		switch {
 		case m.GetEphemeralMessage().GetMessage() != nil:
-			inner = m.GetEphemeralMessage().GetMessage()
+			next = m.GetEphemeralMessage().GetMessage()
 		case m.GetViewOnceMessage().GetMessage() != nil:
-			inner = m.GetViewOnceMessage().GetMessage()
+			next, viewOnce = m.GetViewOnceMessage().GetMessage(), true
 		case m.GetViewOnceMessageV2().GetMessage() != nil:
-			inner = m.GetViewOnceMessageV2().GetMessage()
+			next, viewOnce = m.GetViewOnceMessageV2().GetMessage(), true
 		case m.GetViewOnceMessageV2Extension().GetMessage() != nil:
-			inner = m.GetViewOnceMessageV2Extension().GetMessage()
+			next, viewOnce = m.GetViewOnceMessageV2Extension().GetMessage(), true
 		case m.GetDocumentWithCaptionMessage().GetMessage() != nil:
-			inner = m.GetDocumentWithCaptionMessage().GetMessage()
-		default:
-			return m
+			next = m.GetDocumentWithCaptionMessage().GetMessage()
 		}
-		m = inner
+		if next == nil {
+			break
+		}
+		m = next
 	}
-	return m
+	viewOnce = viewOnce || m.GetImageMessage().GetViewOnce() || m.GetVideoMessage().GetViewOnce() || m.GetAudioMessage().GetViewOnce()
+	return m, viewOnce
 }
 
 // sendMessageReceipt confirms delivery. It also acts as the stanza ack.

@@ -36,6 +36,9 @@ message Conversation {
 	optional uint64         lastMsgTimestamp      = 5;
 	optional uint32         unreadCount           = 6;
 	optional bool           readOnly              = 7;
+	optional bytes          tcToken               = 21;
+	optional uint64         tcTokenTimestamp      = 22;
+	optional uint64         tcTokenSenderTimestamp = 28;
 	optional uint64         conversationTimestamp = 12;
 	optional string         name                  = 13;
 	optional bool           archived              = 16;

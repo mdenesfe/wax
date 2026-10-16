@@ -22,15 +22,33 @@ type GroupParticipant struct {
 
 // GroupInfo is group metadata.
 type GroupInfo struct {
-	JID            wabin.JID          `json:"jid"`
-	Name           string             `json:"name"`
-	Topic          string             `json:"topic,omitempty"`
-	AddressingMode string             `json:"addressing_mode"` // "lid" or "pn"
-	Created        time.Time          `json:"created"`
-	Owner          wabin.JID          `json:"owner,omitzero"`
-	Announce       bool               `json:"announce"` // only admins may send
-	Locked         bool               `json:"locked"`   // only admins may edit info
-	Participants   []GroupParticipant `json:"participants"`
+	JID            wabin.JID `json:"jid"`
+	Name           string    `json:"name"`
+	Topic          string    `json:"topic,omitempty"`
+	AddressingMode string    `json:"addressing_mode"` // "lid" or "pn"
+	Created        time.Time `json:"created"`
+	Owner          wabin.JID `json:"owner,omitzero"`
+	OwnerPN        wabin.JID `json:"owner_pn,omitzero"` // the creator's phone number, when the group uses LIDs
+	Size           int       `json:"size,omitempty"`    // participant count reported by the server
+	NameSetAt      time.Time `json:"name_set_at,omitzero"`
+	NameSetBy      wabin.JID `json:"name_set_by,omitzero"`
+	TopicSetAt     time.Time `json:"topic_set_at,omitzero"`
+	TopicSetBy     wabin.JID `json:"topic_set_by,omitzero"`
+	// Ephemeral is the disappearing messages timer in seconds (0 = off).
+	Ephemeral uint32 `json:"ephemeral,omitempty"`
+	// MemberAddMode says who may add members, e.g. "admin_add" or
+	// "all_member_add", as the server reports it.
+	MemberAddMode string `json:"member_add_mode,omitempty"`
+	JoinApproval  bool   `json:"join_approval"` // admins approve new members
+	Suspended     bool   `json:"suspended"`
+	Announce      bool   `json:"announce"` // only admins may send
+	Locked        bool   `json:"locked"`   // only admins may edit info
+	// Communities: the community itself (a parent group), a group of a
+	// community (Community is the parent), and its announcement group.
+	IsCommunity     bool               `json:"is_community"`
+	Community       wabin.JID          `json:"community,omitzero"`
+	DefaultSubGroup bool               `json:"default_sub_group"`
+	Participants    []GroupParticipant `json:"participants"`
 }
 
 // ErrGroupNotFound is returned for unknown groups or groups we are not in.
@@ -79,13 +97,56 @@ func (c *Client) fetchGroupInfo(ctx context.Context, s *session, group wabin.JID
 		return nil, errors.New("group info: response without <group>")
 	}
 	gi := parseGroup(gn)
+	c.cacheGroup(ctx, gi)
+	return gi, nil
+}
+
+// cacheGroup keeps group metadata and learns its members' LIDs.
+func (c *Client) cacheGroup(ctx context.Context, gi *GroupInfo) {
 	for _, p := range gi.Participants {
 		if !p.LID.IsEmpty() && !p.PhoneNumber.IsEmpty() {
 			c.learnLID(ctx, p.PhoneNumber, p.LID)
 		}
 	}
 	c.groups.put(gi.JID, gi)
-	return gi, nil
+}
+
+// JoinedGroups lists the groups and communities the account is in, with
+// their metadata, in one request:
+//
+//	<iq to="g.us" type="get" xmlns="w:g2">
+//	  <participating><participants/><description/></participating>
+//	</iq>
+//
+// answered with <groups> of <group> elements.
+func (c *Client) JoinedGroups(ctx context.Context) ([]*GroupInfo, error) {
+	s, err := c.activeSession()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.sendIQ(ctx, wabin.Node{
+		Tag:     "iq",
+		Attrs:   wabin.Attrs{"to": wabin.JID{Server: wabin.ServerGroup}, "type": "get", "xmlns": "w:g2"},
+		Content: []wabin.Node{{Tag: "participating", Content: []wabin.Node{{Tag: "participants"}, {Tag: "description"}}}},
+	}, 0)
+	if err != nil {
+		return nil, fmt.Errorf("joined groups: %w", err)
+	}
+	list, ok := resp.Child("groups")
+	if !ok {
+		return nil, errors.New("joined groups: response without <groups>")
+	}
+	var out []*GroupInfo
+	for _, gn := range list.Children() {
+		if gn.Tag != "group" {
+			continue
+		}
+		gi := parseGroup(&gn)
+		c.cacheGroup(ctx, gi)
+		out = append(out, gi)
+	}
+	c.joined.put(struct{}{}, out)
+	return out, nil
 }
 
 func parseGroup(n *wabin.Node) *GroupInfo {
@@ -95,8 +156,16 @@ func parseGroup(n *wabin.Node) *GroupInfo {
 	gi.Name, _ = n.AttrString("subject")
 	gi.AddressingMode, _ = n.AttrString("addressing_mode")
 	gi.Owner, _ = n.AttrJID("creator")
+	gi.OwnerPN, _ = n.AttrJID("creator_pn")
+	gi.NameSetBy, _ = n.AttrJID("s_o")
 	if t, ok := n.AttrInt("creation"); ok {
 		gi.Created = time.Unix(t, 0)
+	}
+	if t, ok := n.AttrInt("s_t"); ok {
+		gi.NameSetAt = time.Unix(t, 0)
+	}
+	if size, ok := n.AttrInt("size"); ok {
+		gi.Size = int(size)
 	}
 	for _, ch := range n.Children() {
 		switch ch.Tag {
@@ -107,10 +176,32 @@ func parseGroup(n *wabin.Node) *GroupInfo {
 			if raw, ok := body.Bytes(); ok {
 				gi.Topic = string(raw)
 			}
+			gi.TopicSetBy, _ = ch.AttrJID("participant")
+			if t, ok := ch.AttrInt("t"); ok {
+				gi.TopicSetAt = time.Unix(t, 0)
+			}
+		case "ephemeral":
+			if exp, ok := ch.AttrInt("expiration"); ok && exp > 0 {
+				gi.Ephemeral = uint32(exp)
+			}
+		case "member_add_mode":
+			if raw, ok := ch.Bytes(); ok {
+				gi.MemberAddMode = string(raw)
+			}
+		case "membership_approval_mode":
+			gi.JoinApproval = true
+		case "suspended":
+			gi.Suspended = true
 		case "announcement":
 			gi.Announce = true
 		case "locked":
 			gi.Locked = true
+		case "parent":
+			gi.IsCommunity = true
+		case "linked_parent":
+			gi.Community, _ = ch.AttrJID("jid")
+		case "default_sub_group":
+			gi.DefaultSubGroup = true
 		}
 	}
 	return gi

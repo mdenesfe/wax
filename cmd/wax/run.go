@@ -410,9 +410,9 @@ func resolveVersion(ctx context.Context, log *slog.Logger, flagValue string, che
 
 // describe renders a message for the console: its text, or its type.
 func describe(e client.Message) string {
-	text, typ, _, _, _ := manager.DescribeMessage("", e.Info.Chat, e.Info.ID, e.Message)
-	if text == "" || typ != "text" {
-		return "[" + typ + "] " + text
+	d := manager.DescribeMessage("", e.Info.Chat, e.Info.ID, e.Message)
+	if d.Text == "" || d.Type != "text" {
+		return "[" + d.Type + "] " + d.Text
 	}
-	return text
+	return d.Text
 }

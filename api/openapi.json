@@ -1945,6 +1945,14 @@
               "type": "string",
               "format": "date-time"
             }
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated message types to keep, e.g. image,video,document."
           }
         ],
         "tags": [
@@ -2561,6 +2569,327 @@
         "tags": [
           "calls"
         ]
+      }
+    },
+    "/v1/instances/{id}/chats/{chat}/picture": {
+      "get": {
+        "summary": "Profile picture of a contact or group",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "tags": [
+          "messages"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "chat",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Contact or group JID (or phone number)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The picture (preview size), cached for a few hours.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No picture, or hidden by privacy settings; or no such instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/instances/{id}/groups": {
+      "get": {
+        "summary": "Joined groups and communities",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Groups and communities the account is in (one request to WhatsApp).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GroupSummary"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/v1/instances/{id}/chats/{chat}/profile": {
+      "get": {
+        "summary": "Profile of a chat's contact",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "tags": [
+          "messages"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "chat",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Contact or group JID (or phone number)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Names, about text, business profile, groups in common and message counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -4428,13 +4757,27 @@
           "client_id": {
             "type": "string",
             "description": "Idempotency key: the same id returns the first request's result."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Id of a message in the same chat to reply to (quoted from the stored history)."
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Users tagged in the text or caption (phone numbers or JIDs); the text should contain \"@<number>\" for each."
+          },
+          "forward": {
+            "$ref": "#/components/schemas/ForwardRequest"
           }
         },
         "additionalProperties": false,
         "required": [
           "to"
         ],
-        "description": "Exactly one of text or media."
+        "description": "Exactly one of text, media or forward. reply_to and mentions go with text or media."
       },
       "MediaUpload": {
         "type": "object",
@@ -4448,7 +4791,7 @@
               "voice",
               "document"
             ],
-            "description": "Default: from the MIME type."
+            "description": "Default: from the MIME type. Voice notes must be Ogg Opus; WebM Opus (what browsers record) is converted."
           },
           "mimetype": {
             "type": "string"
@@ -4462,6 +4805,26 @@
           "data_base64": {
             "type": "string",
             "contentEncoding": "base64"
+          },
+          "thumbnail_base64": {
+            "type": "string",
+            "description": "Optional small JPEG preview of an image or video (at most 100 KiB)."
+          },
+          "width": {
+            "type": "integer",
+            "description": "Image or video width, for the preview."
+          },
+          "height": {
+            "type": "integer",
+            "description": "Image or video height, for the preview."
+          },
+          "seconds": {
+            "type": "integer",
+            "description": "Length of a video or audio (voice notes recorded as WebM get it from the file)."
+          },
+          "waveform_base64": {
+            "type": "string",
+            "description": "Voice note waveform: 64 bytes of 0-100."
           }
         },
         "additionalProperties": false,
@@ -4558,7 +4921,8 @@
             "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The group's subject, or the contact's name in the address book."
           },
           "last_message_at": {
             "type": "string",
@@ -4576,6 +4940,22 @@
           "muted_until": {
             "type": "string",
             "format": "date-time"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (digits) of a 1:1 chat, also when it is addressed by LID."
+          },
+          "last_message": {
+            "$ref": "#/components/schemas/Message",
+            "description": "Newest message (edits and deletions skipped), for previews."
+          },
+          "push_name": {
+            "type": "string",
+            "description": "The contact's own display name (1:1 chats)."
+          },
+          "username": {
+            "type": "string",
+            "description": "The contact's WhatsApp username, without \"@\" (1:1 chats)."
           }
         },
         "additionalProperties": false,
@@ -4619,7 +4999,7 @@
           },
           "type": {
             "type": "string",
-            "description": "text, reaction, protocol, image, video, audio, voice, document, sticker"
+            "description": "text, reaction, protocol, image, video, audio, voice, document, sticker System messages from the history are \"stub:<n>\" (see stub)."
           },
           "text": {
             "type": "string"
@@ -4643,6 +5023,42 @@
               "live",
               "history"
             ]
+          },
+          "sender_phone": {
+            "type": "string",
+            "description": "Sender's phone number (digits), also when it writes from its LID. Message listings only."
+          },
+          "sender_name": {
+            "type": "string",
+            "description": "Sender's name in the address book. Message listings only."
+          },
+          "sender_username": {
+            "type": "string",
+            "description": "Sender's WhatsApp username, without \"@\". Message listings only."
+          },
+          "quoted": {
+            "$ref": "#/components/schemas/Quoted"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "description": "Users tagged in the text."
+          },
+          "forwarded": {
+            "type": "boolean"
+          },
+          "forwarding_score": {
+            "type": "integer",
+            "description": "How often the message was forwarded; WhatsApp shows \"forwarded many times\" from 5."
+          },
+          "view_once": {
+            "type": "boolean",
+            "description": "Sent as view once."
+          },
+          "stub": {
+            "$ref": "#/components/schemas/Stub"
           }
         },
         "additionalProperties": false,
@@ -4676,6 +5092,15 @@
           "download": {
             "type": "string",
             "description": "API path that downloads and decrypts the file."
+          },
+          "seconds": {
+            "type": "integer",
+            "description": "Length of an audio or video."
+          },
+          "waveform": {
+            "type": "string",
+            "format": "byte",
+            "description": "Voice notes: the waveform, 64 levels of 0-100 (base64)."
           }
         },
         "additionalProperties": false,
@@ -4788,6 +5213,55 @@
             "items": {
               "$ref": "#/components/schemas/GroupParticipant"
             }
+          },
+          "is_community": {
+            "type": "boolean",
+            "description": "The group is a community (the parent of its groups)."
+          },
+          "community": {
+            "type": "string",
+            "description": "The community this group belongs to."
+          },
+          "default_sub_group": {
+            "type": "boolean",
+            "description": "The community's announcement group."
+          },
+          "owner_pn": {
+            "type": "string",
+            "description": "The creator's phone number, when the group uses LIDs."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Participant count reported by WhatsApp."
+          },
+          "name_set_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name_set_by": {
+            "type": "string"
+          },
+          "topic_set_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "topic_set_by": {
+            "type": "string"
+          },
+          "ephemeral": {
+            "type": "integer",
+            "description": "Disappearing messages timer in seconds."
+          },
+          "member_add_mode": {
+            "type": "string",
+            "description": "Who may add members, e.g. admin_add or all_member_add."
+          },
+          "join_approval": {
+            "type": "boolean",
+            "description": "Admins approve new members."
+          },
+          "suspended": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -4818,6 +5292,22 @@
           },
           "is_super_admin": {
             "type": "boolean"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (digits), if known."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name in the address book."
+          },
+          "push_name": {
+            "type": "string",
+            "description": "The participant's own display name."
+          },
+          "username": {
+            "type": "string",
+            "description": "WhatsApp username, without \"@\"."
           }
         },
         "additionalProperties": false,
@@ -4853,6 +5343,298 @@
           "timestamp",
           "data"
         ]
+      },
+      "ForwardRequest": {
+        "type": "object",
+        "description": "A stored message to forward (marked as forwarded). View once messages cannot be forwarded.",
+        "properties": {
+          "chat": {
+            "type": "string",
+            "description": "Chat JID of the message."
+          },
+          "message_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "chat",
+          "message_id"
+        ],
+        "additionalProperties": false
+      },
+      "Person": {
+        "type": "object",
+        "description": "A user, with what is known about it (in message listings).",
+        "properties": {
+          "jid": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number (digits)."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name in the address book."
+          },
+          "push_name": {
+            "type": "string",
+            "description": "The user's own display name."
+          },
+          "username": {
+            "type": "string",
+            "description": "WhatsApp username, without \"@\"."
+          }
+        },
+        "required": [
+          "jid"
+        ],
+        "additionalProperties": false
+      },
+      "Quoted": {
+        "type": "object",
+        "description": "The message a reply refers to, as the sender quoted it.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "type": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "Stub": {
+        "type": "object",
+        "description": "A system message from the history (group changes, security notices).",
+        "properties": {
+          "type": {
+            "type": "integer",
+            "description": "WhatsApp's stub type number."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of common types, e.g. group_participant_add, e2e_encrypted, community_unlink_sibling_group."
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Type-specific parameters, often the users concerned."
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "description": "The users among the parameters."
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "additionalProperties": false
+      },
+      "GroupSummary": {
+        "type": "object",
+        "description": "A joined group or community.",
+        "properties": {
+          "jid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "is_community": {
+            "type": "boolean",
+            "description": "The group is a community (the parent of its groups)."
+          },
+          "community": {
+            "type": "string",
+            "description": "The community this group belongs to."
+          },
+          "default_sub_group": {
+            "type": "boolean",
+            "description": "The community's announcement group."
+          },
+          "announce": {
+            "type": "boolean",
+            "description": "Only admins may send."
+          },
+          "participants": {
+            "type": "integer",
+            "description": "Number of participants."
+          }
+        },
+        "required": [
+          "jid",
+          "name",
+          "is_community",
+          "default_sub_group",
+          "announce",
+          "participants"
+        ],
+        "additionalProperties": false
+      },
+      "GroupRef": {
+        "type": "object",
+        "properties": {
+          "jid": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jid",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "BusinessHours": {
+        "type": "object",
+        "description": "One day's opening hours, as WhatsApp reports them.",
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "open": {
+            "type": "string"
+          },
+          "close": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "mode"
+        ],
+        "additionalProperties": false
+      },
+      "Business": {
+        "type": "object",
+        "description": "A business account's public profile.",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "The profile's text elements by name as WhatsApp sends them (e.g. address, email, website, description)."
+          },
+          "time_zone": {
+            "type": "string"
+          },
+          "hours": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BusinessHours"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Profile": {
+        "type": "object",
+        "description": "Everything known about a chat's contact. For groups only messages is set.",
+        "properties": {
+          "jid": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "lid": {
+            "type": "string",
+            "description": "LID user."
+          },
+          "name": {
+            "type": "string",
+            "description": "Name in the address book."
+          },
+          "push_name": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "about": {
+            "type": "string",
+            "description": "The profile's about text (empty when unset or hidden)."
+          },
+          "about_set_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "devices": {
+            "type": "integer",
+            "description": "Linked devices including the phone."
+          },
+          "is_business": {
+            "type": "boolean"
+          },
+          "business": {
+            "$ref": "#/components/schemas/Business"
+          },
+          "common_groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupRef"
+            },
+            "description": "Joined groups the contact is in."
+          },
+          "messages": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Stored messages of the chat by type."
+          },
+          "live": {
+            "type": "boolean",
+            "description": "WhatsApp answered: about, devices and business are current. WhatsApp allows only a few lookups in a row; otherwise try again in a minute."
+          },
+          "about_hidden": {
+            "type": "boolean",
+            "description": "The user's privacy settings hide the about text."
+          }
+        },
+        "required": [
+          "jid",
+          "is_business",
+          "common_groups",
+          "messages",
+          "live",
+          "about_hidden"
+        ],
+        "additionalProperties": false
       }
     },
     "securitySchemes": {

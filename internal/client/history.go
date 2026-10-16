@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -203,6 +204,9 @@ func (s *session) storeConversation(tx *store.Store, conv *wahistorysync.Convers
 	if err := tx.UpdateChat(s.ctx, inst, chat, u); err != nil {
 		return 0, err
 	}
+	if err := s.storeHistoryToken(tx, conv); err != nil {
+		return 0, err
+	}
 	stored := 0
 	for _, hm := range conv.GetMessages() {
 		m, err := historyMessage(chat, hm.GetMessage())
@@ -220,6 +224,26 @@ func (s *session) storeConversation(tx *store.Store, conv *wahistorysync.Convers
 	return stored, nil
 }
 
+// storeHistoryToken keeps a 1:1 conversation's privacy token (and when we
+// last issued ours), under the contact's LID when known.
+func (s *session) storeHistoryToken(tx *store.Store, conv *wahistorysync.Conversation) error {
+	jid, err := wabin.ParseJID(conv.GetID())
+	if err != nil || (jid.Server != wabin.ServerUser && jid.Server != wabin.ServerLID) {
+		return nil
+	}
+	key := s.c.tokenKeys(s.ctx, jid)[0]
+	inst := s.c.cfg.InstanceID
+	if t := conv.GetTcToken(); len(t) > 0 && conv.GetTcTokenTimestamp() > 0 {
+		if err := tx.PutPrivacyToken(s.ctx, inst, key, t, time.Unix(int64(conv.GetTcTokenTimestamp()), 0)); err != nil {
+			return err
+		}
+	}
+	if ts := conv.GetTcTokenSenderTimestamp(); ts > 0 {
+		return tx.MarkPrivacyTokenSent(s.ctx, inst, key, time.Unix(int64(ts), 0))
+	}
+	return nil
+}
+
 // historyMessage converts a history message for storage; nil means skip.
 func historyMessage(chat string, wmi *wahistorysync.WebMessageInfo) (*store.StoredMessage, error) {
 	key := wmi.GetKey()
@@ -234,7 +258,14 @@ func historyMessage(chat string, wmi *wahistorysync.WebMessageInfo) (*store.Stor
 		m.Sender = chat
 	}
 	if wmi.GetMessage() == nil {
+		// A system message (group change, security notice): its type and
+		// parameters (participants, new subject, ...) are all there is.
 		m.Type = fmt.Sprintf("stub:%d", wmi.GetMessageStubType())
+		if params := wmi.GetMessageStubParameters(); len(params) > 0 {
+			var err error
+			m.Content, err = json.Marshal(params)
+			return m, err
+		}
 		return m, nil
 	}
 	if mt := mediaType(wmi.GetMessage()); mt != "" {

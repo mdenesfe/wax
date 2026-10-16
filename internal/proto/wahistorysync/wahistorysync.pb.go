@@ -199,25 +199,28 @@ func (x *HistorySync) GetNctSalt() []byte {
 }
 
 type Conversation struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	ID                    *string                `protobuf:"bytes,1,opt,name=ID" json:"ID,omitempty"`
-	Messages              []*HistorySyncMsg      `protobuf:"bytes,2,rep,name=messages" json:"messages,omitempty"`
-	NewJID                *string                `protobuf:"bytes,3,opt,name=newJID" json:"newJID,omitempty"`
-	OldJID                *string                `protobuf:"bytes,4,opt,name=oldJID" json:"oldJID,omitempty"`
-	LastMsgTimestamp      *uint64                `protobuf:"varint,5,opt,name=lastMsgTimestamp" json:"lastMsgTimestamp,omitempty"`
-	UnreadCount           *uint32                `protobuf:"varint,6,opt,name=unreadCount" json:"unreadCount,omitempty"`
-	ReadOnly              *bool                  `protobuf:"varint,7,opt,name=readOnly" json:"readOnly,omitempty"`
-	ConversationTimestamp *uint64                `protobuf:"varint,12,opt,name=conversationTimestamp" json:"conversationTimestamp,omitempty"`
-	Name                  *string                `protobuf:"bytes,13,opt,name=name" json:"name,omitempty"`
-	Archived              *bool                  `protobuf:"varint,16,opt,name=archived" json:"archived,omitempty"`
-	MarkedAsUnread        *bool                  `protobuf:"varint,19,opt,name=markedAsUnread" json:"markedAsUnread,omitempty"`
-	Pinned                *uint32                `protobuf:"varint,24,opt,name=pinned" json:"pinned,omitempty"`
-	MuteEndTime           *uint64                `protobuf:"varint,25,opt,name=muteEndTime" json:"muteEndTime,omitempty"`
-	DisplayName           *string                `protobuf:"bytes,38,opt,name=displayName" json:"displayName,omitempty"`
-	PnJID                 *string                `protobuf:"bytes,39,opt,name=pnJID" json:"pnJID,omitempty"`
-	LidJID                *string                `protobuf:"bytes,42,opt,name=lidJID" json:"lidJID,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	ID                     *string                `protobuf:"bytes,1,opt,name=ID" json:"ID,omitempty"`
+	Messages               []*HistorySyncMsg      `protobuf:"bytes,2,rep,name=messages" json:"messages,omitempty"`
+	NewJID                 *string                `protobuf:"bytes,3,opt,name=newJID" json:"newJID,omitempty"`
+	OldJID                 *string                `protobuf:"bytes,4,opt,name=oldJID" json:"oldJID,omitempty"`
+	LastMsgTimestamp       *uint64                `protobuf:"varint,5,opt,name=lastMsgTimestamp" json:"lastMsgTimestamp,omitempty"`
+	UnreadCount            *uint32                `protobuf:"varint,6,opt,name=unreadCount" json:"unreadCount,omitempty"`
+	ReadOnly               *bool                  `protobuf:"varint,7,opt,name=readOnly" json:"readOnly,omitempty"`
+	TcToken                []byte                 `protobuf:"bytes,21,opt,name=tcToken" json:"tcToken,omitempty"`
+	TcTokenTimestamp       *uint64                `protobuf:"varint,22,opt,name=tcTokenTimestamp" json:"tcTokenTimestamp,omitempty"`
+	TcTokenSenderTimestamp *uint64                `protobuf:"varint,28,opt,name=tcTokenSenderTimestamp" json:"tcTokenSenderTimestamp,omitempty"`
+	ConversationTimestamp  *uint64                `protobuf:"varint,12,opt,name=conversationTimestamp" json:"conversationTimestamp,omitempty"`
+	Name                   *string                `protobuf:"bytes,13,opt,name=name" json:"name,omitempty"`
+	Archived               *bool                  `protobuf:"varint,16,opt,name=archived" json:"archived,omitempty"`
+	MarkedAsUnread         *bool                  `protobuf:"varint,19,opt,name=markedAsUnread" json:"markedAsUnread,omitempty"`
+	Pinned                 *uint32                `protobuf:"varint,24,opt,name=pinned" json:"pinned,omitempty"`
+	MuteEndTime            *uint64                `protobuf:"varint,25,opt,name=muteEndTime" json:"muteEndTime,omitempty"`
+	DisplayName            *string                `protobuf:"bytes,38,opt,name=displayName" json:"displayName,omitempty"`
+	PnJID                  *string                `protobuf:"bytes,39,opt,name=pnJID" json:"pnJID,omitempty"`
+	LidJID                 *string                `protobuf:"bytes,42,opt,name=lidJID" json:"lidJID,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *Conversation) Reset() {
@@ -297,6 +300,27 @@ func (x *Conversation) GetReadOnly() bool {
 		return *x.ReadOnly
 	}
 	return false
+}
+
+func (x *Conversation) GetTcToken() []byte {
+	if x != nil {
+		return x.TcToken
+	}
+	return nil
+}
+
+func (x *Conversation) GetTcTokenTimestamp() uint64 {
+	if x != nil && x.TcTokenTimestamp != nil {
+		return *x.TcTokenTimestamp
+	}
+	return 0
+}
+
+func (x *Conversation) GetTcTokenSenderTimestamp() uint64 {
+	if x != nil && x.TcTokenSenderTimestamp != nil {
+		return *x.TcTokenSenderTimestamp
+	}
+	return 0
 }
 
 func (x *Conversation) GetConversationTimestamp() uint64 {
@@ -651,7 +675,7 @@ const file_wahistorysync_wahistorysync_proto_rawDesc = "" +
 	"\x06RECENT\x10\x03\x12\r\n" +
 	"\tPUSH_NAME\x10\x04\x12\x15\n" +
 	"\x11NON_BLOCKING_DATA\x10\x05\x12\r\n" +
-	"\tON_DEMAND\x10\x06\"\x8f\x04\n" +
+	"\tON_DEMAND\x10\x06\"\x8d\x05\n" +
 	"\fConversation\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12=\n" +
 	"\bmessages\x18\x02 \x03(\v2!.wax.wahistorysync.HistorySyncMsgR\bmessages\x12\x16\n" +
@@ -659,7 +683,10 @@ const file_wahistorysync_wahistorysync_proto_rawDesc = "" +
 	"\x06oldJID\x18\x04 \x01(\tR\x06oldJID\x12*\n" +
 	"\x10lastMsgTimestamp\x18\x05 \x01(\x04R\x10lastMsgTimestamp\x12 \n" +
 	"\vunreadCount\x18\x06 \x01(\rR\vunreadCount\x12\x1a\n" +
-	"\breadOnly\x18\a \x01(\bR\breadOnly\x124\n" +
+	"\breadOnly\x18\a \x01(\bR\breadOnly\x12\x18\n" +
+	"\atcToken\x18\x15 \x01(\fR\atcToken\x12*\n" +
+	"\x10tcTokenTimestamp\x18\x16 \x01(\x04R\x10tcTokenTimestamp\x126\n" +
+	"\x16tcTokenSenderTimestamp\x18\x1c \x01(\x04R\x16tcTokenSenderTimestamp\x124\n" +
 	"\x15conversationTimestamp\x18\f \x01(\x04R\x15conversationTimestamp\x12\x12\n" +
 	"\x04name\x18\r \x01(\tR\x04name\x12\x1a\n" +
 	"\barchived\x18\x10 \x01(\bR\barchived\x12&\n" +

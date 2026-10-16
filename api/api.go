@@ -26,6 +26,7 @@ import (
 	"github.com/mdenesfe/wax/internal/manager"
 	"github.com/mdenesfe/wax/internal/metrics"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/internal/webui"
 )
 
 // maxBody bounds request bodies (base64 media included).
@@ -110,6 +111,9 @@ func (s *Server) routeTable() []route {
 		{pattern: "GET /v1/instances/{id}/chats", instance: s.listChats},
 		{pattern: "GET /v1/instances/{id}/chats/{chat}/messages", instance: s.listMessages},
 		{pattern: "GET /v1/instances/{id}/chats/{chat}/messages/{mid}/media", instance: s.downloadMedia},
+		{pattern: "GET /v1/instances/{id}/chats/{chat}/picture", instance: s.picture},
+		{pattern: "GET /v1/instances/{id}/chats/{chat}/profile", instance: s.profile},
+		{pattern: "GET /v1/instances/{id}/groups", instance: s.listGroups},
 		{pattern: "POST /v1/instances/{id}/read", instance: s.markRead},
 		{pattern: "POST /v1/instances/{id}/presence", instance: s.presence},
 		{pattern: "GET /v1/instances/{id}/groups/{group}", instance: s.groupInfo},
@@ -122,6 +126,10 @@ func (s *Server) routes() {
 		writeJSON(w, http.StatusOK, healthJSON{Status: "ok"})
 	})
 	s.mux.HandleFunc("GET /openapi.json", serveOpenAPI)
+	// The admin interface (static files; it calls this API with the key
+	// the user signs in with).
+	s.mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Handler()))
+	s.mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
 	for _, rt := range s.routeTable() {
 		if rt.instance != nil {
 			s.mux.Handle(rt.pattern, s.authorized(roleTenant, s.scoped(rt.instance)))

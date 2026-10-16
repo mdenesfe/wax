@@ -80,16 +80,22 @@ type Client struct {
 	cfg Config
 	log *slog.Logger
 
-	preKeyMu sync.Mutex // serializes prekey uploads
-	sendMu   sync.Mutex // serializes outgoing messages (ordering, device fan-out)
-	locks    addrLocks  // per-Signal-address locks
-	devCache deviceCache
-	groups   groupCache
-	media    mediaState
-	appState appStateSync
-	history  chan struct{} // kicks the history sync worker
-	lidSeen  writtenCache  // pn user -> lid user already stored
-	nameSeen writtenCache  // jid -> push name already stored
+	preKeyMu         sync.Mutex // serializes prekey uploads
+	sendMu           sync.Mutex // serializes outgoing messages (ordering, device fan-out)
+	locks            addrLocks  // per-Signal-address locks
+	devCache         deviceCache
+	groups           groupCache
+	pictures         ttlCache[wabin.JID, pictureEntry] // profile pictures and known absences
+	pictureSlots     chan struct{}                     // concurrent picture lookups
+	profiles         ttlCache[wabin.JID, *UserProfile] // user profiles (about, business)
+	joined           ttlCache[struct{}, []*GroupInfo]  // the joined group list, for common groups
+	profileSlot      chan struct{}                     // profile lookups run one at a time
+	profileHoldUntil atomic.Int64                      // unix ns; no profile lookups before (rate limited)
+	media            mediaState
+	appState         appStateSync
+	history          chan struct{} // kicks the history sync worker
+	lidSeen          writtenCache  // pn user -> lid user already stored
+	nameSeen         writtenCache  // jid -> push name already stored
 
 	available   atomic.Bool  // we announced presence "available"
 	pushName    atomic.Value // string; our display name from app state
@@ -119,8 +125,13 @@ func New(cfg Config) (*Client, error) {
 	setDefault(&cfg.KeepAliveTimeout, 10*time.Second)
 	setDefault(&cfg.KeepAliveMaxFailure, 90*time.Second)
 	return &Client{cfg: cfg, log: cfg.Log.With("instance", cfg.InstanceID), history: make(chan struct{}, 1),
-		devCache: newTTLCache[wabin.JID, []wabin.JID](deviceCacheTTL),
-		groups:   newTTLCache[wabin.JID, *GroupInfo](groupCacheTTL),
+		devCache:     newTTLCache[wabin.JID, []wabin.JID](deviceCacheTTL),
+		groups:       newTTLCache[wabin.JID, *GroupInfo](groupCacheTTL),
+		pictures:     newTTLCache[wabin.JID, pictureEntry](pictureTTL),
+		pictureSlots: make(chan struct{}, maxPictureLookups),
+		profiles:     newTTLCache[wabin.JID, *UserProfile](profileTTL),
+		joined:       newTTLCache[struct{}, []*GroupInfo](joinedTTL),
+		profileSlot:  make(chan struct{}, 1),
 	}, nil
 }
 

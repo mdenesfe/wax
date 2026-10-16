@@ -28,6 +28,14 @@ type MediaPayload struct {
 	Caption  string           `json:"caption,omitempty"`
 	FileName string           `json:"file_name,omitempty"`
 	Data     []byte           `json:"data"`
+	// Context is a serialized wae2e.ContextInfo (reply, mentions).
+	Context []byte `json:"context,omitempty"`
+	// Optional previews (see client.SendMediaRequest).
+	Thumbnail []byte `json:"thumbnail,omitempty"`
+	Width     uint32 `json:"width,omitempty"`
+	Height    uint32 `json:"height,omitempty"`
+	Seconds   uint32 `json:"seconds,omitempty"`
+	Waveform  []byte `json:"waveform,omitempty"`
 }
 
 // sendBucket paces an instance's sends: rate per minute, burst of 3.
@@ -145,8 +153,15 @@ func (in *Instance) send(ctx context.Context, cl *client.Client, to wabin.JID, i
 		if !mp.Kind.Valid() {
 			return nil, fmt.Errorf("%w: media kind %q", errInvalidItem, mp.Kind)
 		}
-		return cl.SendMedia(ctx, to, client.SendMediaRequest{Kind: mp.Kind, Data: mp.Data, MimeType: mp.MimeType,
-			Caption: mp.Caption, FileName: mp.FileName, ID: it.MessageID})
+		req := client.SendMediaRequest{Kind: mp.Kind, Data: mp.Data, MimeType: mp.MimeType, Caption: mp.Caption, FileName: mp.FileName,
+			ID: it.MessageID, Thumbnail: mp.Thumbnail, Width: mp.Width, Height: mp.Height, Seconds: mp.Seconds, Waveform: mp.Waveform}
+		if mp.Context != nil {
+			req.Context = &wae2e.ContextInfo{}
+			if err := proto.Unmarshal(mp.Context, req.Context); err != nil {
+				return nil, fmt.Errorf("%w: media context: %w", errInvalidItem, err)
+			}
+		}
+		return cl.SendMedia(ctx, to, req)
 	}
 	return nil, fmt.Errorf("%w: kind %q", errInvalidItem, it.Kind)
 }

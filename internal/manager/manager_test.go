@@ -62,9 +62,10 @@ func TestDescribeMessage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			text, typ, media, _, quoted := DescribeMessage("inst", chat, "ID1", tt.msg)
-			if text != tt.text || typ != tt.typ || quoted != tt.quoted {
-				t.Fatalf("got (%q, %q, quoted %q)", text, typ, quoted)
+			d := DescribeMessage("inst", chat, "ID1", tt.msg)
+			media := d.Media
+			if d.Text != tt.text || d.Type != tt.typ || d.QuotedID != tt.quoted {
+				t.Fatalf("got (%q, %q, quoted %q)", d.Text, d.Type, d.QuotedID)
 			}
 			switch {
 			case tt.media == "" && media != nil:

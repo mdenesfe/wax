@@ -203,6 +203,15 @@ type SendMediaRequest struct {
 	Caption  string // image, video, document
 	FileName string // document
 	ID       string // message id ("" = generate)
+	// Preview details, all optional: a small JPEG and the dimensions of
+	// an image or video, the length of a video or audio, the waveform
+	// (64 values, 0-100) of a voice note.
+	Thumbnail     []byte
+	Width, Height uint32
+	Seconds       uint32
+	Waveform      []byte
+	// Context is the reply/mention context, if any.
+	Context *wae2e.ContextInfo
 }
 
 // SendMedia uploads a file and sends it as a media message.
@@ -240,7 +249,33 @@ func (c *Client) SendMedia(ctx context.Context, to wabin.JID, req SendMediaReque
 			Mimetype: proto.String(req.MimeType), FileName: proto.String(name), Title: proto.String(name),
 			Caption: optString(req.Caption), MediaKeyTimestamp: ts}
 	}
+	addPreview(msg, &req)
+	SetContext(msg, req.Context)
 	return c.SendMessageWithID(ctx, to, msg, req.ID)
+}
+
+// addPreview sets the optional preview fields of a media message.
+func addPreview(msg *wae2e.Message, req *SendMediaRequest) {
+	opt := func(v uint32) *uint32 {
+		if v == 0 {
+			return nil
+		}
+		return &v
+	}
+	switch {
+	case msg.ImageMessage != nil:
+		m := msg.ImageMessage
+		m.JPEGThumbnail, m.Width, m.Height = req.Thumbnail, opt(req.Width), opt(req.Height)
+	case msg.VideoMessage != nil:
+		m := msg.VideoMessage
+		m.JPEGThumbnail, m.Width, m.Height, m.Seconds = req.Thumbnail, opt(req.Width), opt(req.Height), opt(req.Seconds)
+	case msg.AudioMessage != nil:
+		m := msg.AudioMessage
+		m.Seconds = opt(req.Seconds)
+		if req.Kind == KindVoiceNote {
+			m.Waveform = req.Waveform
+		}
+	}
 }
 
 func optString(s string) *string {
