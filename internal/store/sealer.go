@@ -54,6 +54,9 @@ type sealer struct {
 	// keyMAC keys the HMAC stored for API keys (separate HKDF label, so it
 	// is independent of the encryption key).
 	keyMAC []byte
+	// nodeMAC keys the signatures nodes put on forwarded requests; every
+	// node derives it from the shared master key.
+	nodeMAC []byte
 }
 
 func newSealer(masterKey []byte) (*sealer, error) {
@@ -64,7 +67,10 @@ func newSealer(masterKey []byte) (*sealer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sealer{aead: aead, keyMAC: cryptoutil.HKDF(masterKey, nil, "wax/store/api-keys/v1", 32)}, nil
+	return &sealer{aead: aead,
+		keyMAC:  cryptoutil.HKDF(masterKey, nil, "wax/store/api-keys/v1", 32),
+		nodeMAC: cryptoutil.HKDF(masterKey, nil, "wax/node-forward/v1", 32),
+	}, nil
 }
 
 // seal returns version || nonce || ciphertext.

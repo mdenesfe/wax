@@ -50,7 +50,7 @@ func (s *session) kickHistory() {
 // historyWorker processes queued history chunks one at a time.
 func (s *session) historyWorker() {
 	for {
-		processed, err := s.processNextHistory()
+		processed, err := s.withHeavySlot(s.processNextHistory)
 		if err != nil && s.ctx.Err() == nil {
 			s.log.Warn("history sync chunk failed; will retry", "error", err)
 		}
@@ -72,6 +72,22 @@ func (s *session) historyWorker() {
 
 // processNextHistory downloads, decodes and stores the oldest queued
 // chunk. It reports whether a job was found.
+// withHeavySlot runs fn while holding one of the process-wide HeavySlots
+// (if configured).
+func (s *session) withHeavySlot(fn func() (bool, error)) (bool, error) {
+	slots := s.c.cfg.HeavySlots
+	if slots == nil {
+		return fn()
+	}
+	select {
+	case slots <- struct{}{}:
+	case <-s.ctx.Done():
+		return false, s.ctx.Err()
+	}
+	defer func() { <-slots }()
+	return fn()
+}
+
 func (s *session) processNextHistory() (bool, error) {
 	c := s.c
 	job, err := c.cfg.Store.NextHistoryJob(s.ctx, c.cfg.InstanceID, maxHistoryAttempts)

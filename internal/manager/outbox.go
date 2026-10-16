@@ -11,6 +11,7 @@ import (
 
 	"github.com/mdenesfe/wax/internal/client"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
+	"github.com/mdenesfe/wax/internal/ratelimit"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/wabin"
 )
@@ -29,38 +30,12 @@ type MediaPayload struct {
 	Data     []byte           `json:"data"`
 }
 
-// tokenBucket paces sends: rate per minute with a small burst.
-type tokenBucket struct {
-	interval time.Duration
-	burst    float64
-	tokens   float64
-	last     time.Time
-}
-
-func newBucket(perMinute int) *tokenBucket {
+// sendBucket paces an instance's sends: rate per minute, burst of 3.
+func sendBucket(perMinute int) *ratelimit.Bucket {
 	if perMinute <= 0 {
 		perMinute = 20
 	}
-	return &tokenBucket{interval: time.Minute / time.Duration(perMinute), burst: 3, tokens: 3, last: time.Now()}
-}
-
-// wait blocks until a token is available.
-func (b *tokenBucket) wait(ctx context.Context) error {
-	for {
-		now := time.Now()
-		b.tokens = min(b.burst, b.tokens+float64(now.Sub(b.last))/float64(b.interval))
-		b.last = now
-		if b.tokens >= 1 {
-			b.tokens--
-			return nil
-		}
-		need := time.Duration((1 - b.tokens) * float64(b.interval))
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(need):
-		}
-	}
+	return ratelimit.New(float64(perMinute)/60, 3)
 }
 
 // errInvalidItem marks queued items that can never be sent.
@@ -80,7 +55,7 @@ func permanent(err error) bool {
 // instance's rate limit, while the client is logged in.
 func (in *Instance) outboxLoop(ctx context.Context) {
 	defer in.m.recoverLoop("outbox", in.ID)
-	bucket := newBucket(in.config().RatePerMinute)
+	bucket := sendBucket(in.config().RatePerMinute)
 	for {
 		wait := in.sendOne(ctx, bucket)
 		select {
@@ -92,7 +67,7 @@ func (in *Instance) outboxLoop(ctx context.Context) {
 	}
 }
 
-func (in *Instance) sendOne(ctx context.Context, bucket *tokenBucket) time.Duration {
+func (in *Instance) sendOne(ctx context.Context, bucket *ratelimit.Bucket) time.Duration {
 	tm := in.m.cfg.Timing
 	cl := in.client()
 	if cl == nil || !cl.IsLoggedIn() {
@@ -111,7 +86,7 @@ func (in *Instance) sendOne(ctx context.Context, bucket *tokenBucket) time.Durat
 		}
 		return tm.Idle
 	}
-	if err := bucket.wait(ctx); err != nil {
+	if err := bucket.Wait(ctx); err != nil {
 		return 0
 	}
 	to, err := wabin.ParseJID(it.Chat)

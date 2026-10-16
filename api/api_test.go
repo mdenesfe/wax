@@ -139,7 +139,7 @@ func (e *env) startNode(id string) *node {
 			Idle:         50 * time.Millisecond,
 			LeaseTTL:     testLeaseTTL,
 		}})
-	handler = New(m, e.st, testKey, log)
+	handler = New(m, e.st, testKey, log, Options{})
 	runCtx, cancel := context.WithCancel(e.ctx)
 	if err := m.Start(runCtx); err != nil {
 		e.t.Fatal(err)
@@ -348,8 +348,12 @@ func TestTenantIsolation(t *testing.T) {
 	// Data written for A's instance is invisible through B's instance.
 	chat := "905551111111@s.whatsapp.net"
 	content, _ := proto.Marshal(&wae2e.Message{Conversation: proto.String("gizli")})
-	mustT(t, e.st.PutMessage(e.ctx, manager.InternalID(a, "main"), &store.StoredMessage{Chat: chat, ID: "S1", Sender: chat,
-		SentAt: time.Unix(1700000000, 0), Type: "text", Content: content, Source: "live"}))
+	// Messages reference the instance's device row, which its client
+	// creates in the background right after start.
+	waitFor(t, "A's device row", 5*time.Second, func() bool {
+		return e.st.PutMessage(e.ctx, manager.InternalID(a, "main"), &store.StoredMessage{Chat: chat, ID: "S1", Sender: chat,
+			SentAt: time.Unix(1700000000, 0), Type: "text", Content: content, Source: "live"}) == nil
+	})
 	at := time.Unix(1700000000, 0)
 	mustT(t, e.st.UpdateChat(e.ctx, manager.InternalID(a, "main"), chat, store.ChatUpdate{LastMessageAt: &at}))
 	var chats []store.Chat

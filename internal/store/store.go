@@ -61,6 +61,10 @@ func Open(ctx context.Context, dsn string, masterKey []byte) (*Store, error) {
 	return s, nil
 }
 
+// PoolSize is the maximum number of database connections (set with the
+// pool_max_conns parameter of the DSN; pgx defaults to max(4, CPUs)).
+func (s *Store) PoolSize() int { return int(s.pool.Config().MaxConns) }
+
 // Close releases the connection pool.
 func (s *Store) Close() { s.pool.Close() }
 

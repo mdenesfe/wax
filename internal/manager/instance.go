@@ -199,6 +199,7 @@ func (in *Instance) runOnce(ctx context.Context) (err error) {
 		OnEvent:    in.onEvent,
 		URL:        in.m.cfg.ClientURL,
 		Verifier:   in.m.cfg.Verifier,
+		HeavySlots: in.m.heavy,
 	})
 	if err != nil {
 		return err

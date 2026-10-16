@@ -50,14 +50,36 @@ func (s *Store) CreateInstance(ctx context.Context, in *Instance) error {
 	if in.RatePerMinute <= 0 {
 		in.RatePerMinute = 20
 	}
-	err := s.db.QueryRow(ctx, `INSERT INTO wax_instances (id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`,
-		in.ID, in.TenantID, in.Name, in.WebhookURL, secret, in.RatePerMinute).Scan(&in.CreatedAt)
+	err := s.InTx(ctx, func(tx *Store) error {
+		// Locking the tenant row serializes concurrent creates. The count
+		// must be a separate statement: under READ COMMITTED a statement
+		// sees the snapshot taken when it started, so a count in the locking
+		// statement would miss rows committed while it waited for the lock.
+		var quota, count int
+		err := tx.db.QueryRow(ctx, `SELECT max_instances FROM wax_tenants WHERE id = $1 FOR UPDATE`, in.TenantID).Scan(&quota)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound // unknown tenant
+		}
+		if err != nil {
+			return err
+		}
+		if quota > 0 {
+			if err := tx.db.QueryRow(ctx, `SELECT count(*) FROM wax_instances WHERE tenant_id = $1`, in.TenantID).Scan(&count); err != nil {
+				return err
+			}
+			if count >= quota {
+				return ErrQuotaExceeded
+			}
+		}
+		return tx.db.QueryRow(ctx, `INSERT INTO wax_instances (id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`,
+			in.ID, in.TenantID, in.Name, in.WebhookURL, secret, in.RatePerMinute).Scan(&in.CreatedAt)
+	})
 	switch {
 	case isUniqueViolation(err):
 		return ErrConflict
-	case isForeignKeyViolation(err):
-		return ErrNotFound // unknown tenant
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrQuotaExceeded):
+		return err
 	case err != nil:
 		return fmt.Errorf("store: create instance: %w", err)
 	}

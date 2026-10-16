@@ -121,14 +121,34 @@ stops working immediately.
 
 | Method & path (admin key) | Purpose |
 |---|---|
-| `POST /v1/tenants` | create `{id, name}` |
-| `GET /v1/tenants` | list tenants |
+| `POST /v1/tenants` | create `{id, name, max_instances, requests_per_second}` |
+| `GET /v1/tenants`, `GET /v1/tenants/{tenant}` | list tenants, show one |
+| `PATCH /v1/tenants/{tenant}` | change name or limits (absent fields keep their value) |
 | `DELETE /v1/tenants/{tenant}` | delete (only once it has no instances) |
 | `POST /v1/tenants/{tenant}/keys` | issue a key; the response is the only place it appears |
 | `GET /v1/tenants/{tenant}/keys` | list key ids |
 | `DELETE /v1/tenants/{tenant}/keys/{key}` | revoke a key |
 
 Instances created before tenants existed belong to the tenant `default`.
+
+### Resource isolation
+
+- **API rate per tenant**: `requests_per_second` (burst: two seconds'
+  worth; 0 = the node default set with `-tenant-rps`, 20). Above it the API
+  answers `429` with `Retry-After`; other tenants are unaffected. Limits
+  apply per node.
+- **Instance quota per tenant**: `max_instances` (0 = no quota), enforced
+  atomically, also for concurrent requests (`403` when reached).
+- **Large uploads**: at most 4 large request bodies per node at once, and
+  at most half of them for one tenant.
+- **Heavy background work**: history sync chunks of all accounts on a node
+  are processed at most 2 at a time.
+- **Sends**: each instance's outbox is paced by its `rate_per_minute`.
+- **Database connections**: set `pool_max_conns` in `WAX_DATABASE_URL`
+  (for example `...?sslmode=disable&pool_max_conns=20`); the node logs the
+  pool size at start. pgx defaults to max(4, CPUs).
+- Requests forwarded between nodes carry a signature (keyed from
+  `WAX_MASTER_KEY`), so a client cannot forge one to skip the rate limit.
 
 All routes below use a tenant key.
 

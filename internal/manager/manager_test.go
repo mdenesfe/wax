@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -23,32 +22,6 @@ func TestSign(t *testing.T) {
 	m.Write(body)
 	if got, want := Sign(secret, body), "sha256="+hex.EncodeToString(m.Sum(nil)); got != want {
 		t.Fatalf("Sign = %s, want %s", got, want)
-	}
-}
-
-func TestTokenBucket(t *testing.T) {
-	b := newBucket(6000) // one token per 10ms, burst 3
-	ctx := context.Background()
-	start := time.Now()
-	for range 3 {
-		if err := b.wait(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if time.Since(start) > 5*time.Millisecond {
-		t.Fatal("burst tokens were not immediate")
-	}
-	if err := b.wait(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if d := time.Since(start); d < 8*time.Millisecond {
-		t.Fatalf("fourth token after %v; rate limit not applied", d)
-	}
-	cctx, cancel := context.WithCancel(ctx)
-	cancel()
-	b.tokens = 0
-	if err := b.wait(cctx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("wait on canceled context: %v", err)
 	}
 }
 

@@ -28,6 +28,7 @@ type serveOptions struct {
 	nodeID               string
 	advertise            string
 	maxInstances         int
+	tenantRPS            int
 }
 
 // serveCommand runs the multi-instance API server.
@@ -44,6 +45,7 @@ func serveCommand(args []string) {
 	fs.StringVar(&o.nodeID, "node-id", "", "this node's id when several nodes share the database (default: hostname + random)")
 	fs.StringVar(&o.advertise, "advertise", "", "URL where the other nodes reach this node's API (default: http://<listen>)")
 	fs.IntVar(&o.maxInstances, "max-instances", 0, "most instances this node runs (0: no limit)")
+	fs.IntVar(&o.tenantRPS, "tenant-rps", api.DefaultRequestsPerSecond, "API requests per second per tenant, unless the tenant has its own limit (per node)")
 	_ = fs.Parse(args)
 	o.checkVersion = !*noVersionCheck
 
@@ -66,6 +68,7 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 		return err
 	}
 	defer st.Close()
+	log.Info("database connected", "pool_max_conns", st.PoolSize())
 
 	version, err := resolveVersion(ctx, log, o.version, o.checkVersion)
 	if err != nil {
@@ -83,7 +86,7 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 
 	srv := &http.Server{
 		Addr:              o.listen,
-		Handler:           api.New(m, st, apiKey, log),
+		Handler:           api.New(m, st, apiKey, log, api.Options{DefaultRequestsPerSecond: o.tenantRPS}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute, // large media uploads
 		WriteTimeout:      5 * time.Minute,

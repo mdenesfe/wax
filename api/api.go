@@ -45,14 +45,24 @@ type Server struct {
 	apiKey []byte
 	log    *slog.Logger
 	mux    *http.ServeMux
-	large  chan struct{} // semaphore for large request bodies
+	large  *largeSlots    // concurrent large request bodies, fair per tenant
+	limits *tenantLimiter // per-tenant API rate
 	// nodeHTTP forwards requests to other nodes; it shares connections.
 	nodeHTTP http.RoundTripper
 }
 
+// Options are optional API settings.
+type Options struct {
+	// DefaultRequestsPerSecond is the API rate of tenants without their own
+	// (0: DefaultRequestsPerSecond).
+	DefaultRequestsPerSecond int
+}
+
 // New builds the API handler.
-func New(m *manager.Manager, st *store.Store, apiKey string, log *slog.Logger) *Server {
-	s := &Server{m: m, store: st, apiKey: []byte(apiKey), log: log, mux: http.NewServeMux(), large: make(chan struct{}, maxLargeRequests),
+func New(m *manager.Manager, st *store.Store, apiKey string, log *slog.Logger, opts Options) *Server {
+	s := &Server{m: m, store: st, apiKey: []byte(apiKey), log: log, mux: http.NewServeMux(),
+		large:    newLargeSlots(maxLargeRequests),
+		limits:   newTenantLimiter(opts.DefaultRequestsPerSecond),
 		nodeHTTP: &http.Transport{ResponseHeaderTimeout: 5 * time.Minute, IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 16}}
 	s.routes()
 	return s
@@ -69,6 +79,8 @@ func (s *Server) routes() {
 	admin := map[string]http.HandlerFunc{
 		"POST /v1/tenants":                       s.createTenant,
 		"GET /v1/tenants":                        s.listTenants,
+		"GET /v1/tenants/{tenant}":               s.getTenant,
+		"PATCH /v1/tenants/{tenant}":             s.updateTenant,
 		"DELETE /v1/tenants/{tenant}":            s.deleteTenant,
 		"POST /v1/tenants/{tenant}/keys":         s.createKey,
 		"GET /v1/tenants/{tenant}/keys":          s.listKeys,
@@ -116,7 +128,7 @@ func (s *Server) scoped(h instanceHandler) http.HandlerFunc {
 			s.fail(w, err)
 			return
 		}
-		if !in.Running() && r.Header.Get(forwardedHeader) == "" {
+		if !in.Running() && !isForwarded(r) {
 			owner, err := s.m.Owner(r.Context(), in)
 			if err == nil && owner.Node != s.m.NodeID() {
 				s.forward(w, r, owner)
@@ -173,17 +185,29 @@ func (s *Server) authorized(need role, next http.HandlerFunc) http.Handler {
 			next(w, r)
 			return
 		}
-		tenant, err := s.store.VerifyAPIKey(r.Context(), token)
+		auth, err := s.store.VerifyAPIKey(r.Context(), token)
 		switch {
 		case errors.Is(err, store.ErrInvalidAPIKey):
 			writeError(w, http.StatusUnauthorized, errors.New("invalid or missing API key"))
+			return
 		case err != nil:
 			s.fail(w, err)
+			return
 		case need != roleTenant:
 			writeError(w, http.StatusForbidden, errors.New("this endpoint needs the admin key"))
-		default:
-			next(w, r.WithContext(context.WithValue(r.Context(), tenantKey{}, tenant)))
+			return
 		}
+		// The node that received the request from the client applied the
+		// limit already; a signed forwarded request is not counted twice.
+		forwarded := s.verifyForward(r)
+		if !forwarded {
+			if ok, wait := s.limits.allow(auth.TenantID, auth.RequestsPerSecond); !ok {
+				tooManyRequests(w, wait)
+				return
+			}
+		}
+		r = withForwarded(r, forwarded)
+		next(w, r.WithContext(context.WithValue(r.Context(), tenantKey{}, auth.TenantID)))
 	})
 }
 
@@ -202,17 +226,17 @@ func (s *Server) upstream(w http.ResponseWriter, r *http.Request, err error) {
 	writeJSON(w, http.StatusBadGateway, map[string]string{"error": "upstream request failed"})
 }
 
-// acquireLarge limits concurrent large requests (see maxLargeRequests).
+// acquireLarge limits concurrent large requests (see maxLargeRequests),
+// at most half of them per tenant.
 func (s *Server) acquireLarge(r *http.Request) (release func(), err error) {
 	if r.ContentLength >= 0 && r.ContentLength < largeBody {
 		return func() {}, nil
 	}
-	select {
-	case s.large <- struct{}{}:
-		return func() { <-s.large }, nil
-	case <-r.Context().Done():
-		return nil, r.Context().Err()
+	tenant := tenantOf(r)
+	if err := s.large.acquire(r.Context(), tenant); err != nil {
+		return nil, err
 	}
+	return func() { s.large.release(tenant) }, nil
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
@@ -226,6 +250,8 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, errors.New("not found"))
 	case errors.Is(err, manager.ErrExists), errors.Is(err, store.ErrConflict):
 		writeError(w, http.StatusConflict, errors.New("already exists"))
+	case errors.Is(err, store.ErrQuotaExceeded):
+		writeError(w, http.StatusForbidden, errors.New("instance quota of this tenant reached"))
 	case errors.Is(err, store.ErrTenantNotEmpty):
 		writeError(w, http.StatusConflict, errors.New("delete the tenant's instances first"))
 	case errors.Is(err, manager.ErrInvalidID), errors.Is(err, errBadRequest):

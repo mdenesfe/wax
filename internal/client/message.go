@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -208,7 +209,15 @@ func (s *session) handleEnc(n *wabin.Node, info *MessageInfo, encJID wabin.JID, 
 		return encHandled
 	}
 	if err != nil {
-		s.log.Warn("decryption failed", "id", info.ID, "type", encType, "from", wabin.MaskJID(info.Sender), "error", err)
+		// A missing session or sender key is the case retry receipts exist
+		// for (the sender re-sends with a fresh key): expected, not a fault.
+		// Anything else (bad MAC, malformed message) is worth a warning.
+		level := slog.LevelWarn
+		if errors.Is(err, signal.ErrNoSession) || errors.Is(err, signal.ErrMissingPreKey) {
+			level = slog.LevelInfo
+		}
+		s.log.Log(s.ctx, level, "decryption failed; requesting a retry", "id", info.ID, "type", encType,
+			"from", wabin.MaskJID(info.Sender), "error", err)
 		if s.ctx.Err() == nil { // when shutting down, leave it for redelivery
 			s.sendRetryReceipt(n, info)
 			s.ack(n)

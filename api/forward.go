@@ -26,7 +26,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, owner *store.Le
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
-			pr.Out.Header.Set(forwardedHeader, s.m.NodeID())
+			pr.Out.Header.Set(forwardedHeader, s.signForward(pr.In))
 		},
 		Transport: s.nodeHTTP,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

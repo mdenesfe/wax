@@ -62,6 +62,11 @@ type Config struct {
 
 	// MediaHTTP is used for media up/downloads (nil: default client).
 	MediaHTTP *http.Client
+	// HeavySlots, if not nil, is a semaphore shared by the clients of one
+	// process: history sync chunks (download, inflate, thousands of rows)
+	// hold a slot while they are processed, so many accounts syncing at
+	// once cannot starve the others of CPU and database connections.
+	HeavySlots chan struct{}
 
 	// DumpNodes logs every received node at debug level (masked unless
 	// DumpUnmasked is also set).

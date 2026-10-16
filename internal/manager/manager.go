@@ -66,6 +66,9 @@ type Config struct {
 	Address string
 	// MaxInstances caps the instances this node runs (0: no cap).
 	MaxInstances int
+	// HeavyWork is how many history sync chunks this node processes at
+	// once, across all instances (0: 2).
+	HeavyWork int
 }
 
 // Timing holds the delays of the outbox and webhook loops.
@@ -117,6 +120,7 @@ type Manager struct {
 	instances map[string]*Instance // running on this node, by internal id
 	ctx       context.Context
 
+	heavy    chan struct{}      // shared HeavySlots of this node's clients
 	publish  chan struct{}      // an instance's state changed: publish it soon
 	stopped  chan struct{}      // closed when the lease loop has ended
 	stopLoop context.CancelFunc // ends the lease loop (nil before Start)
@@ -133,6 +137,10 @@ func New(cfg Config) *Manager {
 	cfg.Timing = cfg.Timing.withDefaults()
 	m := &Manager{cfg: cfg, store: cfg.Store, log: cfg.Log, hookHTTP: cfg.WebhookHTTP, instances: map[string]*Instance{},
 		publish: make(chan struct{}, 1), stopped: make(chan struct{})}
+	if m.cfg.HeavyWork <= 0 {
+		m.cfg.HeavyWork = 2
+	}
+	m.heavy = make(chan struct{}, m.cfg.HeavyWork)
 	if m.cfg.NodeID == "" {
 		m.cfg.NodeID = randomNodeID()
 	}

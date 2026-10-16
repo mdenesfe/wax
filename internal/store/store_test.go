@@ -249,7 +249,7 @@ func TestAPIKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.VerifyAPIKey(ctx, token); err != nil || got != tenant {
+	if got, err := s.VerifyAPIKey(ctx, token); err != nil || got.TenantID != tenant {
 		t.Fatalf("verify: %q %v", got, err)
 	}
 	// Only an HMAC is stored: the secret never appears in the row.
