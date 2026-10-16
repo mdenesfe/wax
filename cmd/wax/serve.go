@@ -14,6 +14,7 @@ import (
 
 	"github.com/mdenesfe/wax/api"
 	"github.com/mdenesfe/wax/internal/manager"
+	"github.com/mdenesfe/wax/internal/metrics"
 	"github.com/mdenesfe/wax/internal/store"
 )
 
@@ -29,6 +30,7 @@ type serveOptions struct {
 	advertise            string
 	maxInstances         int
 	tenantRPS            int
+	metricsListen        string
 }
 
 // serveCommand runs the multi-instance API server.
@@ -45,6 +47,7 @@ func serveCommand(args []string) {
 	fs.StringVar(&o.nodeID, "node-id", "", "this node's id when several nodes share the database (default: hostname + random)")
 	fs.StringVar(&o.advertise, "advertise", "", "URL where the other nodes reach this node's API (default: http://<listen>)")
 	fs.IntVar(&o.maxInstances, "max-instances", 0, "most instances this node runs (0: no limit)")
+	fs.StringVar(&o.metricsListen, "metrics-listen", "", "serve Prometheus metrics at http://<addr>/metrics (keep it internal; empty: off)")
 	fs.IntVar(&o.tenantRPS, "tenant-rps", api.DefaultRequestsPerSecond, "API requests per second per tenant, unless the tenant has its own limit (per node)")
 	_ = fs.Parse(args)
 	o.checkVersion = !*noVersionCheck
@@ -77,8 +80,13 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 	if o.advertise == "" {
 		o.advertise = "http://" + o.listen
 	}
+	var reg *metrics.Registry
+	if o.metricsListen != "" {
+		reg = metrics.New()
+	}
 	m := manager.New(manager.Config{Store: st, Log: log, Version: version, CheckVersion: o.checkVersion,
-		AllowPrivateWebhooks: o.allowPrivateWebhooks, NodeID: o.nodeID, Address: o.advertise, MaxInstances: o.maxInstances})
+		AllowPrivateWebhooks: o.allowPrivateWebhooks, NodeID: o.nodeID, Address: o.advertise, MaxInstances: o.maxInstances,
+		Metrics: reg})
 	if err := m.Start(ctx); err != nil {
 		return err
 	}
@@ -86,15 +94,21 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 
 	srv := &http.Server{
 		Addr:              o.listen,
-		Handler:           api.New(m, st, apiKey, log, api.Options{DefaultRequestsPerSecond: o.tenantRPS}),
+		Handler:           api.New(m, st, apiKey, log, api.Options{DefaultRequestsPerSecond: o.tenantRPS, Metrics: reg}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute, // large media uploads
 		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
 	}
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
 	go func() { errCh <- srv.ListenAndServe() }()
 	log.Info("api listening", "addr", o.listen)
+	if reg != nil {
+		msrv := metricsServer(o.metricsListen, reg)
+		defer msrv.Close()
+		go func() { errCh <- msrv.ListenAndServe() }()
+		log.Info("metrics listening", "addr", o.metricsListen)
+	}
 	select {
 	case err := <-errCh:
 		return fmt.Errorf("http server: %w", err)
@@ -112,6 +126,17 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 }
 
 // openStore opens the database using the environment configuration.
+// metricsServer serves the registry in the Prometheus text format. It has
+// no authentication: bind it to an internal address only.
+func metricsServer(addr string, reg *metrics.Registry) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		_ = reg.Write(w)
+	})
+	return &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second, WriteTimeout: 30 * time.Second}
+}
+
 func openStore(ctx context.Context) (*store.Store, error) {
 	masterKey, err := store.ParseMasterKey(os.Getenv("WAX_MASTER_KEY"))
 	if err != nil {

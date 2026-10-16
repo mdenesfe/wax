@@ -140,6 +140,15 @@ func jidStr(j wabin.JID) string {
 	return j.String()
 }
 
+// WebhookEvents lists every webhook event name, as documented in the
+// OpenAPI contract (api/openapi.json). Tests keep both in sync.
+var WebhookEvents = []string{
+	"message", "undecryptable_message", "receipt", "send_status",
+	"qr", "qr_timeout", "paired", "pair_error", "connected", "disconnected", "logged_out", "replaced", "client_outdated",
+	"call", "presence", "chat_presence", "group_update", "history_sync", "identity_changed",
+	"app_state_error", "app_state_unverified",
+}
+
 // toWebhook converts a client event into (event name, data). ok is false
 // for events that are not delivered to webhooks.
 func toWebhook(instance string, e client.Event) (string, any, bool) {
@@ -192,7 +201,8 @@ func toWebhook(instance string, e client.Event) (string, any, bool) {
 	case client.GroupUpdate:
 		return "group_update", map[string]any{"group": jidStr(e.JID), "changes": e.Changes}, true
 	case client.HistorySync:
-		return "history_sync", e, true
+		return "history_sync", map[string]any{"type": e.Type, "chunk": e.Chunk, "progress": e.Progress,
+			"conversations": e.Conversations, "messages": e.Messages, "push_names": e.PushNames}, true
 	case client.IdentityChanged:
 		return "identity_changed", map[string]any{"jid": jidStr(e.JID)}, true
 	case client.AppStateSyncError:

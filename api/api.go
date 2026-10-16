@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mdenesfe/wax/internal/manager"
+	"github.com/mdenesfe/wax/internal/metrics"
 	"github.com/mdenesfe/wax/internal/store"
 )
 
@@ -47,6 +48,7 @@ type Server struct {
 	mux    *http.ServeMux
 	large  *largeSlots    // concurrent large request bodies, fair per tenant
 	limits *tenantLimiter // per-tenant API rate
+	met    apiMetrics
 	// nodeHTTP forwards requests to other nodes; it shares connections.
 	nodeHTTP http.RoundTripper
 }
@@ -56,6 +58,8 @@ type Options struct {
 	// DefaultRequestsPerSecond is the API rate of tenants without their own
 	// (0: DefaultRequestsPerSecond).
 	DefaultRequestsPerSecond int
+	// Metrics receives request metrics (nil: disabled).
+	Metrics *metrics.Registry
 }
 
 // New builds the API handler.
@@ -63,6 +67,7 @@ func New(m *manager.Manager, st *store.Store, apiKey string, log *slog.Logger, o
 	s := &Server{m: m, store: st, apiKey: []byte(apiKey), log: log, mux: http.NewServeMux(),
 		large:    newLargeSlots(maxLargeRequests),
 		limits:   newTenantLimiter(opts.DefaultRequestsPerSecond),
+		met:      newAPIMetrics(opts.Metrics),
 		nodeHTTP: &http.Transport{ResponseHeaderTimeout: 5 * time.Minute, IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 16}}
 	s.routes()
 	return s
@@ -72,48 +77,57 @@ func New(m *manager.Manager, st *store.Store, apiKey string, log *slog.Logger, o
 // within the caller's tenant.
 type instanceHandler func(http.ResponseWriter, *http.Request, *manager.Instance)
 
+// route is one API endpoint: its ServeMux pattern and who may call it.
+type route struct {
+	pattern  string
+	role     role
+	handler  http.HandlerFunc // admin and tenant routes
+	instance instanceHandler  // routes on one instance (tenant role)
+}
+
+// routeTable lists every authenticated endpoint. The OpenAPI contract test
+// compares it with openapi.json.
+func (s *Server) routeTable() []route {
+	return []route{
+		{pattern: "POST /v1/tenants", role: roleAdmin, handler: s.createTenant},
+		{pattern: "GET /v1/tenants", role: roleAdmin, handler: s.listTenants},
+		{pattern: "GET /v1/tenants/{tenant}", role: roleAdmin, handler: s.getTenant},
+		{pattern: "PATCH /v1/tenants/{tenant}", role: roleAdmin, handler: s.updateTenant},
+		{pattern: "DELETE /v1/tenants/{tenant}", role: roleAdmin, handler: s.deleteTenant},
+		{pattern: "POST /v1/tenants/{tenant}/keys", role: roleAdmin, handler: s.createKey},
+		{pattern: "GET /v1/tenants/{tenant}/keys", role: roleAdmin, handler: s.listKeys},
+		{pattern: "DELETE /v1/tenants/{tenant}/keys/{key}", role: roleAdmin, handler: s.deleteKey},
+
+		{pattern: "POST /v1/instances", role: roleTenant, handler: s.createInstance},
+		{pattern: "GET /v1/instances", role: roleTenant, handler: s.listInstances},
+		{pattern: "GET /v1/instances/{id}", instance: s.getInstance},
+		{pattern: "PATCH /v1/instances/{id}", instance: s.updateInstance},
+		{pattern: "DELETE /v1/instances/{id}", instance: s.deleteInstance},
+		{pattern: "POST /v1/instances/{id}/connect", instance: s.connect},
+		{pattern: "GET /v1/instances/{id}/qr", instance: s.qr},
+		{pattern: "POST /v1/instances/{id}/messages", instance: s.sendMessage},
+		{pattern: "GET /v1/instances/{id}/outbox/{oid}", instance: s.outboxStatus},
+		{pattern: "GET /v1/instances/{id}/chats", instance: s.listChats},
+		{pattern: "GET /v1/instances/{id}/chats/{chat}/messages", instance: s.listMessages},
+		{pattern: "GET /v1/instances/{id}/chats/{chat}/messages/{mid}/media", instance: s.downloadMedia},
+		{pattern: "POST /v1/instances/{id}/read", instance: s.markRead},
+		{pattern: "POST /v1/instances/{id}/presence", instance: s.presence},
+		{pattern: "GET /v1/instances/{id}/groups/{group}", instance: s.groupInfo},
+		{pattern: "POST /v1/instances/{id}/calls/{call}/reject", instance: s.rejectCall},
+	}
+}
+
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, healthJSON{Status: "ok"})
 	})
-	admin := map[string]http.HandlerFunc{
-		"POST /v1/tenants":                       s.createTenant,
-		"GET /v1/tenants":                        s.listTenants,
-		"GET /v1/tenants/{tenant}":               s.getTenant,
-		"PATCH /v1/tenants/{tenant}":             s.updateTenant,
-		"DELETE /v1/tenants/{tenant}":            s.deleteTenant,
-		"POST /v1/tenants/{tenant}/keys":         s.createKey,
-		"GET /v1/tenants/{tenant}/keys":          s.listKeys,
-		"DELETE /v1/tenants/{tenant}/keys/{key}": s.deleteKey,
-	}
-	for pattern, h := range admin {
-		s.mux.Handle(pattern, s.authorized(roleAdmin, h))
-	}
-	tenant := map[string]http.HandlerFunc{
-		"POST /v1/instances": s.createInstance,
-		"GET /v1/instances":  s.listInstances,
-	}
-	for pattern, h := range tenant {
-		s.mux.Handle(pattern, s.authorized(roleTenant, h))
-	}
-	scoped := map[string]instanceHandler{
-		"GET /v1/instances/{id}":                                   s.getInstance,
-		"PATCH /v1/instances/{id}":                                 s.updateInstance,
-		"DELETE /v1/instances/{id}":                                s.deleteInstance,
-		"POST /v1/instances/{id}/connect":                          s.connect,
-		"GET /v1/instances/{id}/qr":                                s.qr,
-		"POST /v1/instances/{id}/messages":                         s.sendMessage,
-		"GET /v1/instances/{id}/outbox/{oid}":                      s.outboxStatus,
-		"GET /v1/instances/{id}/chats":                             s.listChats,
-		"GET /v1/instances/{id}/chats/{chat}/messages":             s.listMessages,
-		"GET /v1/instances/{id}/chats/{chat}/messages/{mid}/media": s.downloadMedia,
-		"POST /v1/instances/{id}/read":                             s.markRead,
-		"POST /v1/instances/{id}/presence":                         s.presence,
-		"GET /v1/instances/{id}/groups/{group}":                    s.groupInfo,
-		"POST /v1/instances/{id}/calls/{call}/reject":              s.rejectCall,
-	}
-	for pattern, h := range scoped {
-		s.mux.Handle(pattern, s.authorized(roleTenant, s.scoped(h)))
+	s.mux.HandleFunc("GET /openapi.json", serveOpenAPI)
+	for _, rt := range s.routeTable() {
+		if rt.instance != nil {
+			s.mux.Handle(rt.pattern, s.authorized(roleTenant, s.scoped(rt.instance)))
+		} else {
+			s.mux.Handle(rt.pattern, s.authorized(rt.role, rt.handler))
+		}
 	}
 }
 
@@ -141,14 +155,17 @@ func (s *Server) scoped(h instanceHandler) http.HandlerFunc {
 
 // ServeHTTP implements http.Handler with panic isolation per request.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
 	defer func() {
 		if p := recover(); p != nil {
 			s.log.Error("api handler panicked", "path", r.URL.Path, "panic", p, "stack", string(debug.Stack()))
-			writeError(w, http.StatusInternalServerError, errors.New("internal error"))
+			writeError(rec, http.StatusInternalServerError, errors.New("internal error"))
 		}
+		s.met.observe(r, rec.code, time.Since(start))
 	}()
-	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
-	s.mux.ServeHTTP(w, r)
+	r.Body = http.MaxBytesReader(rec, r.Body, maxBody)
+	s.mux.ServeHTTP(rec, r)
 }
 
 // role is what a route requires of the caller.
@@ -202,6 +219,7 @@ func (s *Server) authorized(need role, next http.HandlerFunc) http.Handler {
 		forwarded := s.verifyForward(r)
 		if !forwarded {
 			if ok, wait := s.limits.allow(auth.TenantID, auth.RequestsPerSecond); !ok {
+				s.met.limited.Inc(auth.TenantID)
 				tooManyRequests(w, wait)
 				return
 			}
@@ -223,7 +241,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // logged, not returned: they can contain protocol internals and CDN paths.
 func (s *Server) upstream(w http.ResponseWriter, r *http.Request, err error) {
 	s.log.Warn("upstream request failed", "method", r.Method, "path", r.URL.Path, "error", err)
-	writeJSON(w, http.StatusBadGateway, map[string]string{"error": "upstream request failed"})
+	writeJSON(w, http.StatusBadGateway, errorJSON{Error: "upstream request failed"})
 }
 
 // acquireLarge limits concurrent large requests (see maxLargeRequests),
@@ -240,7 +258,7 @@ func (s *Server) acquireLarge(r *http.Request) (release func(), err error) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
-	writeJSON(w, status, map[string]string{"error": err.Error()})
+	writeJSON(w, status, errorJSON{Error: err.Error()})
 }
 
 // fail maps domain errors to HTTP status codes.

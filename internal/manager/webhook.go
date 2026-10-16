@@ -125,11 +125,14 @@ func (in *Instance) deliverOne(ctx context.Context) (time.Duration, error) {
 	if len(cfg.WebhookSecret) > 0 {
 		req.Header.Set("X-Wax-Signature", Sign(cfg.WebhookSecret, it.Payload))
 	}
+	start := time.Now()
 	resp, err := in.m.hookHTTP.Do(req)
+	in.m.met.hookTime.Observe(time.Since(start).Seconds(), in.TenantID)
 	if err == nil {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			in.m.met.hooks.Inc(in.TenantID, in.Name, "ok")
 			return 0, st.MarkWebhook(ctx, it.ID, "delivered", time.Now(), "")
 		}
 		err = fmt.Errorf("http %d", resp.StatusCode)
@@ -138,9 +141,11 @@ func (in *Instance) deliverOne(ctx context.Context) (time.Duration, error) {
 		return 0, ctx.Err()
 	}
 	if it.Attempts+1 >= webhookMaxAttempts {
+		in.m.met.hooks.Inc(in.TenantID, in.Name, "dead")
 		in.log.Error("webhook delivery given up", "delivery", it.ID, "event", it.Event, "error", err)
 		return 0, st.MarkWebhook(ctx, it.ID, "dead", time.Now(), err.Error())
 	}
+	in.m.met.hooks.Inc(in.TenantID, in.Name, "retry")
 	delay := tm.WebhookRetry.Delay(it.Attempts + 1)
 	if merr := st.MarkWebhook(ctx, it.ID, "pending", time.Now().Add(delay), err.Error()); merr != nil {
 		return delay, errors.Join(err, merr)

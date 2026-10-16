@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/mdenesfe/wax/internal/backoff"
+	"github.com/mdenesfe/wax/internal/metrics"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/transport"
 	"github.com/mdenesfe/wax/internal/wabin"
@@ -69,6 +70,8 @@ type Config struct {
 	// HeavyWork is how many history sync chunks this node processes at
 	// once, across all instances (0: 2).
 	HeavyWork int
+	// Metrics receives the manager's metrics (nil: disabled).
+	Metrics *metrics.Registry
 }
 
 // Timing holds the delays of the outbox and webhook loops.
@@ -120,7 +123,8 @@ type Manager struct {
 	instances map[string]*Instance // running on this node, by internal id
 	ctx       context.Context
 
-	heavy    chan struct{}      // shared HeavySlots of this node's clients
+	heavy    chan struct{} // shared HeavySlots of this node's clients
+	met      instruments
 	publish  chan struct{}      // an instance's state changed: publish it soon
 	stopped  chan struct{}      // closed when the lease loop has ended
 	stopLoop context.CancelFunc // ends the lease loop (nil before Start)
@@ -141,6 +145,8 @@ func New(cfg Config) *Manager {
 		m.cfg.HeavyWork = 2
 	}
 	m.heavy = make(chan struct{}, m.cfg.HeavyWork)
+	m.met = newInstruments(cfg.Metrics)
+	cfg.Metrics.OnCollect(m.collect)
 	if m.cfg.NodeID == "" {
 		m.cfg.NodeID = randomNodeID()
 	}
@@ -250,6 +256,7 @@ func (m *Manager) Create(ctx context.Context, cfg store.Instance) (*Instance, er
 	if err != nil || len(ids) == 0 {
 		return newInstance(m, cfg), nil // runs wherever the next lease round puts it
 	}
+	m.met.lease.Inc("acquired")
 	return m.run(cfg)
 }
 

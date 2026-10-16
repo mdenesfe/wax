@@ -89,6 +89,9 @@ func (in *Instance) QR() string {
 // setStatus records a state change and asks the lease loop to publish it.
 func (in *Instance) setStatus(s Status) {
 	in.status.Store(s)
+	if in.running {
+		in.setStatusMetric(s)
+	}
 	kick(in.m.publish)
 }
 
@@ -213,6 +216,7 @@ func (in *Instance) runOnce(ctx context.Context) (err error) {
 // client's handler goroutine before the stanza is acknowledged, so a queued
 // webhook is never lost.
 func (in *Instance) onEvent(e client.Event) {
+	in.countEvent(e)
 	switch e := e.(type) {
 	case client.QRCode:
 		in.qr.Store(e.Content)

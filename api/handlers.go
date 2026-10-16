@@ -186,7 +186,7 @@ func (s *Server) qr(w http.ResponseWriter, r *http.Request, in *manager.Instance
 		_, _ = w.Write(png)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"code": code, "png_base64": base64.StdEncoding.EncodeToString(png)})
+	writeJSON(w, http.StatusOK, qrJSON{Code: code, PNGBase64: base64.StdEncoding.EncodeToString(png)})
 }
 
 // --- sending -------------------------------------------------------------------------
@@ -262,7 +262,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, in *manager
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"outbox_id": it.ID, "message_id": it.MessageID, "status": it.Status, "duplicate": !created})
+	writeJSON(w, http.StatusAccepted, sendResponse{OutboxID: it.ID, MessageID: it.MessageID, Status: it.Status, Duplicate: !created})
 }
 
 func (s *Server) outboxStatus(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
@@ -276,8 +276,8 @@ func (s *Server) outboxStatus(w http.ResponseWriter, r *http.Request, in *manage
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"outbox_id": it.ID, "client_id": it.ClientID, "message_id": it.MessageID, "chat": it.Chat,
-		"status": it.Status, "attempts": it.Attempts, "last_error": it.LastError, "server_timestamp": it.ServerTS, "created_at": it.CreatedAt})
+	writeJSON(w, http.StatusOK, outboxJSON{OutboxID: it.ID, ClientID: it.ClientID, MessageID: it.MessageID, Chat: it.Chat,
+		Status: it.Status, Attempts: it.Attempts, LastError: it.LastError, ServerTimestamp: it.ServerTS, CreatedAt: it.CreatedAt})
 }
 
 // --- reading ------------------------------------------------------------------------
@@ -368,11 +368,7 @@ func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request, in *manag
 }
 
 func (s *Server) markRead(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
-	var req struct {
-		Chat   string   `json:"chat"`
-		Sender string   `json:"sender"`
-		IDs    []string `json:"ids"`
-	}
+	var req markReadRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, err)
 		return
@@ -387,9 +383,7 @@ func (s *Server) markRead(w http.ResponseWriter, r *http.Request, in *manager.In
 }
 
 func (s *Server) presence(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
-	var req struct {
-		Available bool `json:"available"`
-	}
+	var req presenceRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, err)
 		return
@@ -398,9 +392,7 @@ func (s *Server) presence(w http.ResponseWriter, r *http.Request, in *manager.In
 }
 
 func (s *Server) rejectCall(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
-	var req struct {
-		From string `json:"from"`
-	}
+	var req rejectCallRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, err)
 		return

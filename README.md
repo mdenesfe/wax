@@ -73,6 +73,33 @@ Everything else is a flag of `wax serve`: `-listen` (default
 host or a private network; refused by default to prevent SSRF). Logs are
 JSON on stderr; SIGINT/SIGTERM shut down gracefully.
 
+### API contract
+
+`GET /openapi.json` serves the OpenAPI 3.1 description of every endpoint,
+schema and webhook event (no key needed). A test compares it with the code
+(routes, key types, JSON field names, webhook events), so it cannot drift.
+
+### Metrics
+
+`wax serve -metrics-listen 127.0.0.1:9090` serves Prometheus metrics at
+`/metrics` on a separate address without authentication: keep it internal.
+They are written by the node itself (no client library):
+
+| Metric | Labels |
+|---|---|
+| `wax_instance_status` (1 per current status), `wax_instances_running` | tenant, instance, status |
+| `wax_messages_received_total`, `wax_messages_sent_total` | tenant, instance (, result) |
+| `wax_decrypt_failures_total` (recoverable / error), `wax_disconnects_total` | tenant, instance |
+| `wax_outbox_pending`, `wax_webhooks_pending` | tenant, instance |
+| `wax_webhook_deliveries_total` (ok / retry / dead), `wax_webhook_delivery_seconds` | tenant (, instance) |
+| `wax_api_requests_total`, `wax_api_request_seconds` | route pattern, code |
+| `wax_api_rate_limited_total` | tenant |
+| `wax_lease_events_total` (acquired / released / lost / fenced) | event |
+| `wax_db_connections`, `wax_goroutines`, `wax_heap_bytes` | state |
+
+Each node reports the instances it runs. Per-instance series grow with the
+number of accounts (a few series each).
+
 ### Running several nodes
 
 Any number of `wax serve` processes can share one database; each instance

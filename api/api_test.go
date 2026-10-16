@@ -19,6 +19,7 @@ import (
 
 	"github.com/mdenesfe/wax/internal/backoff"
 	"github.com/mdenesfe/wax/internal/manager"
+	"github.com/mdenesfe/wax/internal/metrics"
 	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
@@ -80,6 +81,7 @@ type env struct {
 	hooks *hookSink
 	hook  *httptest.Server
 	m     *manager.Manager
+	reg   *metrics.Registry // metrics of the first node
 
 	tenant string // the test's own tenant
 	key    string // its API key
@@ -107,7 +109,7 @@ func setup(t *testing.T) *env {
 	e.hook = httptest.NewServer(e.hooks)
 	t.Cleanup(e.hook.Close)
 	first := e.startNode("a")
-	e.m, e.api = first.m, first.api
+	e.m, e.api, e.reg = first.m, first.api, first.reg
 	e.tenant, e.key = e.newTenant("t")
 	return e
 }
@@ -117,6 +119,7 @@ func setup(t *testing.T) *env {
 // node is one wax process of a test cluster: a manager and its API.
 type node struct {
 	m    *manager.Manager
+	reg  *metrics.Registry
 	api  *httptest.Server
 	stop context.CancelFunc // cancels the manager's context (a crash: no release)
 }
@@ -131,7 +134,8 @@ func (e *env) startNode(id string) *node {
 	var handler http.Handler
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).With("node", id)
-	m := manager.New(manager.Config{Store: e.st, Log: log, ClientURL: e.srv.URL, Verifier: e.srv.Verifier, AllowPrivateWebhooks: true,
+	reg := metrics.New()
+	m := manager.New(manager.Config{Store: e.st, Log: log, Metrics: reg, ClientURL: e.srv.URL, Verifier: e.srv.Verifier, AllowPrivateWebhooks: true,
 		NodeID: fmt.Sprintf("%s-%d", id, time.Now().UnixNano()), Address: api.URL,
 		Timing: manager.Timing{
 			WebhookRetry: backoff.Policy{Min: time.Millisecond, Max: 10 * time.Millisecond},
@@ -139,13 +143,13 @@ func (e *env) startNode(id string) *node {
 			Idle:         50 * time.Millisecond,
 			LeaseTTL:     testLeaseTTL,
 		}})
-	handler = New(m, e.st, testKey, log, Options{})
+	handler = New(m, e.st, testKey, log, Options{Metrics: reg})
 	runCtx, cancel := context.WithCancel(e.ctx)
 	if err := m.Start(runCtx); err != nil {
 		e.t.Fatal(err)
 	}
 	e.t.Cleanup(func() { cancel(); m.Stop(); api.Close() })
-	return &node{m: m, api: api, stop: cancel}
+	return &node{m: m, reg: reg, api: api, stop: cancel}
 }
 
 func (e *env) newTenant(prefix string) (id, key string) {
@@ -313,6 +317,26 @@ func TestAPIEndToEnd(t *testing.T) {
 	mustT(t, json.Unmarshal(e.ok("GET", "/v1/instances/"+id+"/chats/"+chat+"/messages", nil, 200), &msgs))
 	if len(msgs) != 1 || msgs[0].Text != "selam" {
 		t.Fatalf("messages %+v", msgs)
+	}
+
+	// Metrics reflect what happened.
+	var mb strings.Builder
+	mustT(t, e.reg.Write(&mb))
+	for _, want := range []string{
+		fmt.Sprintf(`wax_instance_status{tenant="%s",instance="main",status="connected"} 1`, e.tenant),
+		`wax_api_requests_total{route="GET /v1/instances/{id}",code="200"}`,
+		`wax_api_requests_total{route="POST /v1/instances/{id}/messages",code="202"}`,
+		fmt.Sprintf(`wax_messages_sent_total{tenant="%s",instance="main",result="failed"} 1`, e.tenant),
+		fmt.Sprintf(`wax_webhook_deliveries_total{tenant="%s",instance="main",result="ok"}`, e.tenant),
+		fmt.Sprintf(`wax_webhook_deliveries_total{tenant="%s",instance="main",result="retry"} 1`, e.tenant),
+		fmt.Sprintf(`wax_outbox_pending{tenant="%s",instance="main"} 0`, e.tenant),
+		`wax_db_connections{state="max"}`,
+		`wax_lease_events_total{event="acquired"}`,
+		"# TYPE wax_api_request_seconds histogram",
+	} {
+		if !strings.Contains(mb.String(), want) {
+			t.Errorf("metrics lack %s", want)
+		}
 	}
 
 	e.hooks.mu.Lock()

@@ -57,7 +57,7 @@ func (l *tenantLimiter) allow(tenant string, rate int) (bool, time.Duration) {
 // tooManyRequests answers 429 with the seconds to wait.
 func tooManyRequests(w http.ResponseWriter, wait time.Duration) {
 	w.Header().Set("Retry-After", strconv.Itoa(max(1, int((wait+time.Second-1)/time.Second))))
-	writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate limit exceeded"})
+	writeJSON(w, http.StatusTooManyRequests, errorJSON{Error: "rate limit exceeded"})
 }
 
 // --- signed forwarding ----------------------------------------------------------

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -90,6 +91,35 @@ func TestCheckWebhookAddr(t *testing.T) {
 	for _, good := range []string{"93.184.216.34:443", "[2606:2800:220:1::1]:443"} {
 		if err := checkWebhookAddr(good); err != nil {
 			t.Errorf("%s rejected: %v", good, err)
+		}
+	}
+}
+
+// TestWebhookEventsListed: every event toWebhook can produce is in
+// WebhookEvents (which the OpenAPI contract test checks against the spec).
+func TestWebhookEventsListed(t *testing.T) {
+	events := []client.Event{
+		client.Message{Message: &wae2e.Message{}}, client.UndecryptableMessage{Err: errors.New("x")}, client.Receipt{},
+		client.QRCode{}, client.QRTimeout{}, client.PairSuccess{}, client.PairError{Err: errors.New("x")}, client.Connected{},
+		client.Disconnected{}, client.LoggedOut{}, client.StreamReplaced{}, client.ClientOutdated{}, client.CallEvent{},
+		client.Presence{}, client.ChatPresence{}, client.GroupUpdate{}, client.HistorySync{}, client.IdentityChanged{},
+		client.AppStateSyncError{Err: errors.New("x")}, client.AppStateUnverified{},
+	}
+	seen := map[string]bool{"send_status": true} // emitted by the outbox, not toWebhook
+	for _, e := range events {
+		name, _, ok := toWebhook("inst", e)
+		if !ok {
+			t.Errorf("%T is not delivered", e)
+			continue
+		}
+		if !slices.Contains(WebhookEvents, name) {
+			t.Errorf("event %q (%T) missing from WebhookEvents", name, e)
+		}
+		seen[name] = true
+	}
+	for _, name := range WebhookEvents {
+		if !seen[name] {
+			t.Errorf("WebhookEvents lists %q, which nothing produces", name)
 		}
 	}
 }

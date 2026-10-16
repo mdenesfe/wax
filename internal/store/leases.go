@@ -172,3 +172,44 @@ func (s *Store) InstanceViews(ctx context.Context, tenant, name string) ([]Insta
 		return v, err
 	})
 }
+
+// QueueDepth is the number of pending items of an instance's queues.
+type QueueDepth struct {
+	Outbox, Webhooks int
+}
+
+// QueueDepths returns the pending outbox and webhook items of the given
+// instances in one query (instances with empty queues are absent).
+func (s *Store) QueueDepths(ctx context.Context, ids []string) (map[string]QueueDepth, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT instance_id, sum(o), sum(w) FROM (
+			SELECT instance_id, 1 AS o, 0 AS w FROM wax_outbox WHERE status = 'pending' AND instance_id = ANY($1)
+			UNION ALL
+			SELECT instance_id, 0, 1 FROM wax_webhook_queue WHERE status = 'pending' AND instance_id = ANY($1)
+		) q GROUP BY instance_id`, ids)
+	if err != nil {
+		return nil, fmt.Errorf("store: queue depths: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]QueueDepth{}
+	for rows.Next() {
+		var id string
+		var d QueueDepth
+		if err := rows.Scan(&id, &d.Outbox, &d.Webhooks); err != nil {
+			return nil, err
+		}
+		out[id] = d
+	}
+	return out, rows.Err()
+}
+
+// PoolStats reports the database connection pool.
+type PoolStats struct {
+	Max, Total, Acquired, Idle int
+}
+
+// Pool returns current connection pool statistics.
+func (s *Store) Pool() PoolStats {
+	st := s.pool.Stat()
+	return PoolStats{Max: int(st.MaxConns()), Total: int(st.TotalConns()), Acquired: int(st.AcquiredConns()), Idle: int(st.IdleConns())}
+}

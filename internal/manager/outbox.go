@@ -105,6 +105,7 @@ func (in *Instance) sendOne(ctx context.Context, bucket *ratelimit.Bucket) time.
 		if ts.IsZero() {
 			ts = time.Now()
 		}
+		in.m.met.sent.Inc(in.TenantID, in.Name, "sent")
 		if merr := st.MarkOutboxSent(ctx, it.ID, ts); merr != nil {
 			in.log.Error("could not mark outbox item sent", "id", it.ID, "error", merr)
 		}
@@ -115,6 +116,7 @@ func (in *Instance) sendOne(ctx context.Context, bucket *ratelimit.Bucket) time.
 		// the loop again.
 		return tm.Idle
 	case permanent(err) || it.Attempts+1 >= outboxMaxAttempts:
+		in.m.met.sent.Inc(in.TenantID, in.Name, "failed")
 		_ = st.MarkOutboxFailed(ctx, it.ID, err.Error())
 		in.log.Warn("message send failed", "outbox_id", it.ID, "error", err)
 		in.emitWebhook("send_status", map[string]any{"outbox_id": it.ID, "client_id": it.ClientID, "message_id": it.MessageID,

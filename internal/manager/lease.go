@@ -129,6 +129,7 @@ func (l *leaser) fenceIfStale() {
 	}
 	if lost := l.m.takeRunning(nil); len(lost) > 0 {
 		l.m.log.Error("database unreachable; stopping instances before their leases expire", "instances", len(lost))
+		l.m.met.lease.Add(float64(len(lost)), "fenced")
 		stopAll(lost)
 	}
 }
@@ -138,6 +139,7 @@ func (l *leaser) stopLost(owned []string) {
 	lost := l.m.takeRunning(func(in *Instance) bool { return !slices.Contains(owned, in.ID) })
 	for _, in := range lost {
 		in.log.Warn("lease lost; stopping instance (another node may run it now)")
+		l.m.met.lease.Inc("lost")
 	}
 	stopAll(lost)
 }
@@ -161,6 +163,7 @@ func (l *leaser) acquire(ctx context.Context, n int) error {
 			return err
 		}
 		m.log.Info("instance acquired", "instance", cfg.ID)
+		m.met.lease.Inc("acquired")
 	}
 	return nil
 }
@@ -175,6 +178,7 @@ func (l *leaser) release(ctx context.Context, ids []string) {
 		m.log.Warn("could not release leases; they expire on their own", "error", err)
 	}
 	m.log.Info("instances released for rebalancing", "count", len(list))
+	m.met.lease.Add(float64(len(list)), "released")
 }
 
 // publishStates writes changed instance states to their lease rows.

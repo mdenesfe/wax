@@ -1,0 +1,4871 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "wax API",
+    "version": "1",
+    "description": "Multi-tenant WhatsApp linked-device API. The admin key manages tenants and keys; tenant keys manage that tenant's instances (other tenants' instances answer 404). Requests may reach any node of a cluster."
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "security": [
+    {
+      "tenantKey": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "admin"
+    },
+    {
+      "name": "instances"
+    },
+    {
+      "name": "messages"
+    },
+    {
+      "name": "groups"
+    },
+    {
+      "name": "calls"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Liveness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Running.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document."
+          }
+        }
+      }
+    },
+    "/v1/tenants": {
+      "post": {
+        "summary": "Create a tenant",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCreate"
+              }
+            }
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "summary": "List tenants",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Tenant"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}": {
+      "get": {
+        "summary": "Show a tenant",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "summary": "Change name or limits",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tenant"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPatch"
+              }
+            }
+          }
+        },
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "summary": "Delete a tenant",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted with its keys."
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tenant still has instances.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/keys": {
+      "post": {
+        "summary": "Issue a tenant key",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The key; shown only here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyCreated"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "summary": "List key ids",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Keys (without secrets).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/APIKey"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/tenants/{tenant}/keys/{key}": {
+      "delete": {
+        "summary": "Revoke a key",
+        "security": [
+          {
+            "adminKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked; stops working at once."
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant id."
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Key id."
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/instances": {
+      "post": {
+        "summary": "Create an instance",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created; it starts and offers a QR code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name taken in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstanceCreate"
+              }
+            }
+          }
+        },
+        "tags": [
+          "instances"
+        ]
+      },
+      "get": {
+        "summary": "List instances",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The tenant's instances, across all nodes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Instance"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/v1/instances/{id}": {
+      "get": {
+        "summary": "Show an instance",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Instance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "tags": [
+          "instances"
+        ]
+      },
+      "patch": {
+        "summary": "Change webhook or send rate",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstancePatch"
+              }
+            }
+          }
+        },
+        "tags": [
+          "instances"
+        ]
+      },
+      "delete": {
+        "summary": "Unlink and delete",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Logged out (if connected) and all data removed."
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/v1/instances/{id}/connect": {
+      "post": {
+        "summary": "Start a new pairing / reconnect",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Requested."
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/v1/instances/{id}/qr": {
+      "get": {
+        "summary": "Current QR code",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "QR code (JSON, or image/png with ?format=png).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QR"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "png"
+              ]
+            }
+          }
+        ],
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/v1/instances/{id}/messages": {
+      "post": {
+        "summary": "Queue a message",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Queued (or the existing item for a repeated client_id).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        },
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/outbox/{oid}": {
+      "get": {
+        "summary": "Send status",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outbox item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxItem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "oid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Outbox id."
+          }
+        ],
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/chats": {
+      "get": {
+        "summary": "List chats",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chats, most recent first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Chat"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/chats/{chat}/messages": {
+      "get": {
+        "summary": "List messages of a chat",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Message"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "chat",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat JID."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "maximum": 500
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/chats/{chat}/messages/{mid}/media": {
+      "get": {
+        "summary": "Download media",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The decrypted file (Content-Disposition: attachment).",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Media servers failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "chat",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Chat JID."
+          },
+          {
+            "name": "mid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Message id."
+          }
+        ],
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/read": {
+      "post": {
+        "summary": "Send read receipts",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sent."
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkRead"
+              }
+            }
+          }
+        },
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/presence": {
+      "post": {
+        "summary": "Set availability",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sent."
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Presence"
+              }
+            }
+          }
+        },
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/v1/instances/{id}/groups/{group}": {
+      "get": {
+        "summary": "Group metadata",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupInfo"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Group JID."
+          }
+        ],
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/v1/instances/{id}/calls/{call}/reject": {
+      "post": {
+        "summary": "Reject an incoming call",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Rejected."
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          },
+          {
+            "name": "call",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Call id from the call event."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectCall"
+              }
+            }
+          }
+        },
+        "tags": [
+          "calls"
+        ]
+      }
+    }
+  },
+  "webhooks": {
+    "message": {
+      "post": {
+        "summary": "A message was received (or sent from another device)",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/Message"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "undecryptable_message": {
+      "post": {
+        "summary": "A message could not be decrypted (a retry was requested)",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "chat": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "sender": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "receipt": {
+      "post": {
+        "summary": "Delivery/read receipts",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "ids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "chat": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "sender": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "send_status": {
+      "post": {
+        "summary": "An outbox item was sent or failed",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "outbox_id": {
+                            "type": "integer"
+                          },
+                          "client_id": {
+                            "type": "string"
+                          },
+                          "message_id": {
+                            "type": "string"
+                          },
+                          "chat": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "sent",
+                              "failed"
+                            ]
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "qr": {
+      "post": {
+        "summary": "A QR code to scan",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "png_base64": {
+                            "type": "string"
+                          },
+                          "timeout_seconds": {
+                            "type": "integer"
+                          },
+                          "index": {
+                            "type": "integer"
+                          },
+                          "total": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "qr_timeout": {
+      "post": {
+        "summary": "No QR code was scanned in time",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "paired": {
+      "post": {
+        "summary": "The phone linked this device",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "jid": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "lid": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "platform": {
+                            "type": "string"
+                          },
+                          "business_name": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "pair_error": {
+      "post": {
+        "summary": "Pairing failed",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "connected": {
+      "post": {
+        "summary": "Logged in and online",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "jid": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "disconnected": {
+      "post": {
+        "summary": "The connection ended",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "retry_in_seconds": {
+                            "type": "number"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "logged_out": {
+      "post": {
+        "summary": "The device was unlinked; a new QR pairing is needed",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "replaced": {
+      "post": {
+        "summary": "Another connection took over this session",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "client_outdated": {
+      "post": {
+        "summary": "WhatsApp rejected the client version",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "call": {
+      "post": {
+        "summary": "A call event",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "call_id": {
+                            "type": "string"
+                          },
+                          "creator": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "group": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "video": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "presence": {
+      "post": {
+        "summary": "A contact's availability",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "last_seen": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "chat_presence": {
+      "post": {
+        "summary": "Typing / recording state",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "chat": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "sender": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "media": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "group_update": {
+      "post": {
+        "summary": "Group membership or metadata changed",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "group": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          },
+                          "changes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "history_sync": {
+      "post": {
+        "summary": "A history chunk was stored",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string"
+                          },
+                          "chunk": {
+                            "type": "integer"
+                          },
+                          "progress": {
+                            "type": "integer"
+                          },
+                          "conversations": {
+                            "type": "integer"
+                          },
+                          "messages": {
+                            "type": "integer"
+                          },
+                          "push_names": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "identity_changed": {
+      "post": {
+        "summary": "A contact's identity key changed",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "jid": {
+                            "type": "string",
+                            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "app_state_error": {
+      "post": {
+        "summary": "An app state collection failed to sync",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "collection": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    },
+    "app_state_unverified": {
+      "post": {
+        "summary": "An app state collection's hash cannot be verified (records are)",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "collection": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ]
+      },
+      "Tenant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "max_instances": {
+            "type": "integer",
+            "description": "Instance quota; 0 = none."
+          },
+          "requests_per_second": {
+            "type": "integer",
+            "description": "API rate; 0 = the node default (-tenant-rps)."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "max_instances",
+          "requests_per_second",
+          "created_at"
+        ]
+      },
+      "TenantCreate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,64}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requests_per_second": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ]
+      },
+      "TenantPatch": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "max_instances": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requests_per_second": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          }
+        },
+        "additionalProperties": false,
+        "description": "Absent fields keep their value."
+      },
+      "APIKey": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "created_at"
+        ]
+      },
+      "APIKeyCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "wax_<id>_<secret>; shown only in this response."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "key",
+          "created_at"
+        ]
+      },
+      "Instance": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Name of the instance within the tenant."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "connecting",
+              "qr",
+              "connected",
+              "logged_out",
+              "replaced",
+              "outdated",
+              "banned",
+              "failed",
+              "stopped",
+              "unassigned"
+            ]
+          },
+          "jid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "lid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "webhook_url": {
+            "type": "string"
+          },
+          "rate_per_minute": {
+            "type": "integer"
+          },
+          "qr_pending": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "rate_per_minute",
+          "qr_pending"
+        ]
+      },
+      "InstanceCreate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,64}$"
+          },
+          "webhook_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "webhook_secret": {
+            "type": "string",
+            "description": "Key of the X-Wax-Signature HMAC; write-only."
+          },
+          "rate_per_minute": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600,
+            "description": "Send pacing; 0 = 20."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ]
+      },
+      "InstancePatch": {
+        "type": "object",
+        "properties": {
+          "webhook_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "webhook_secret": {
+            "type": "string"
+          },
+          "rate_per_minute": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600
+          }
+        },
+        "additionalProperties": false,
+        "description": "Absent fields keep their value."
+      },
+      "QR": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Content of the QR code to show."
+          },
+          "png_base64": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "png_base64"
+        ]
+      },
+      "SendRequest": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Phone number (digits, optional +) or JID."
+          },
+          "text": {
+            "type": "string"
+          },
+          "media": {
+            "$ref": "#/components/schemas/MediaUpload"
+          },
+          "client_id": {
+            "type": "string",
+            "description": "Idempotency key: the same id returns the first request's result."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "to"
+        ],
+        "description": "Exactly one of text or media."
+      },
+      "MediaUpload": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "audio",
+              "voice",
+              "document"
+            ],
+            "description": "Default: from the MIME type."
+          },
+          "mimetype": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "data_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "data_base64"
+        ]
+      },
+      "SendResponse": {
+        "type": "object",
+        "properties": {
+          "outbox_id": {
+            "type": "integer"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "failed"
+            ]
+          },
+          "duplicate": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outbox_id",
+          "message_id",
+          "status",
+          "duplicate"
+        ]
+      },
+      "OutboxItem": {
+        "type": "object",
+        "properties": {
+          "outbox_id": {
+            "type": "integer"
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "chat": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "sent",
+              "failed"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "server_timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "outbox_id",
+          "message_id",
+          "chat",
+          "status",
+          "attempts",
+          "created_at"
+        ]
+      },
+      "Chat": {
+        "type": "object",
+        "properties": {
+          "jid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "name": {
+            "type": "string"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "unread_count": {
+            "type": "integer"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "muted_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "jid",
+          "unread_count",
+          "archived",
+          "pinned"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chat": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "sender": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "sender_alt": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "from_me": {
+            "type": "boolean"
+          },
+          "is_group": {
+            "type": "boolean"
+          },
+          "push_name": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "description": "text, reaction, protocol, image, video, audio, voice, document, sticker"
+          },
+          "text": {
+            "type": "string"
+          },
+          "media": {
+            "$ref": "#/components/schemas/Media"
+          },
+          "reaction": {
+            "$ref": "#/components/schemas/Reaction"
+          },
+          "quoted_id": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "object",
+            "description": "The decrypted protobuf message as protojson."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "live",
+              "history"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "chat",
+          "from_me",
+          "is_group",
+          "timestamp",
+          "type"
+        ]
+      },
+      "Media": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "mimetype": {
+            "type": "string"
+          },
+          "caption": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "file_length": {
+            "type": "integer"
+          },
+          "download": {
+            "type": "string",
+            "description": "API path that downloads and decrypts the file."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "download"
+        ]
+      },
+      "Reaction": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string"
+          },
+          "emoji": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "message_id",
+          "emoji"
+        ]
+      },
+      "MarkRead": {
+        "type": "object",
+        "properties": {
+          "chat": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "sender": {
+            "type": "string",
+            "description": "In groups: the author of the messages."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "chat",
+          "ids"
+        ]
+      },
+      "Presence": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "available"
+        ]
+      },
+      "RejectCall": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "from"
+        ]
+      },
+      "GroupInfo": {
+        "type": "object",
+        "properties": {
+          "jid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "name": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "string"
+          },
+          "addressing_mode": {
+            "type": "string",
+            "enum": [
+              "lid",
+              "pn"
+            ]
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "owner": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "announce": {
+            "type": "boolean"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroupParticipant"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "jid",
+          "name",
+          "addressing_mode",
+          "participants"
+        ]
+      },
+      "GroupParticipant": {
+        "type": "object",
+        "properties": {
+          "jid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "lid": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "is_admin": {
+            "type": "boolean"
+          },
+          "is_super_admin": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "jid",
+          "is_admin",
+          "is_super_admin"
+        ]
+      },
+      "WebhookEnvelope": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string",
+            "description": "Instance name."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "description": "Event payload; see the webhooks section."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "event",
+          "instance",
+          "timestamp",
+          "data"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "adminKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "WAX_API_KEY of the deployment."
+      },
+      "tenantKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "wax_<id>_<secret>, issued by POST /v1/tenants/{tenant}/keys."
+      }
+    }
+  }
+}

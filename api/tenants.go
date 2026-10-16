@@ -12,12 +12,7 @@ import (
 var tenantIDPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
 func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ID                string `json:"id"`
-		Name              string `json:"name"`
-		MaxInstances      int    `json:"max_instances"`
-		RequestsPerSecond int    `json:"requests_per_second"`
-	}
+	var req tenantRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, err)
 		return
@@ -66,11 +61,7 @@ func (s *Server) getTenant(w http.ResponseWriter, r *http.Request) {
 
 // updateTenant changes the name and limits; absent fields keep their value.
 func (s *Server) updateTenant(w http.ResponseWriter, r *http.Request) {
-	var patch struct {
-		Name              *string `json:"name"`
-		MaxInstances      *int    `json:"max_instances"`
-		RequestsPerSecond *int    `json:"requests_per_second"`
-	}
+	var patch tenantPatch
 	if err := decode(r, &patch); err != nil {
 		s.fail(w, err)
 		return
@@ -116,7 +107,7 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"id": key.ID, "key": token, "created_at": key.CreatedAt})
+	writeJSON(w, http.StatusCreated, apiKeyCreated{ID: key.ID, Key: token, CreatedAt: key.CreatedAt})
 }
 
 func (s *Server) listKeys(w http.ResponseWriter, r *http.Request) {
