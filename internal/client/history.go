@@ -128,12 +128,14 @@ func (s *session) loadHistory(n *wae2e.HistorySyncNotification) (*wahistorysync.
 	return &hs, nil
 }
 
-// storeHistory persists a decoded chunk and deletes its job in one
-// transaction, so a crash never stores a chunk twice or loses it.
+// storeHistory persists a decoded chunk and deletes its job atomically, so
+// a crash never stores a chunk twice or loses it.
 func (s *session) storeHistory(jobID int64, hs *wahistorysync.HistorySync) (HistorySync, error) {
 	ev := HistorySync{Type: hs.GetSyncType().String(), Chunk: hs.GetChunkOrder(), Progress: hs.GetProgress(), PushNames: len(hs.GetPushnames())}
 	inst := s.c.cfg.InstanceID
-	err := s.c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
+	// All writes go in one batch: one round trip and one implicit
+	// transaction instead of a round trip per row.
+	err := s.c.cfg.Store.Batch(s.ctx, func(tx *store.Store) error {
 		for _, m := range hs.GetPhoneNumberToLidMappings() {
 			if err := storeLIDMapping(s.ctx, tx, inst, m.GetPnJID(), m.GetLidJID()); err != nil {
 				return err
@@ -255,7 +257,8 @@ func (c *Client) storeLiveMessage(ctx context.Context, chat, sender wabin.JID, i
 	if mt := mediaType(msg); mt != "" {
 		typ = mt
 	}
-	err = c.cfg.Store.InTx(ctx, func(tx *store.Store) error {
+	// One round trip: both writes are queued and sent together.
+	err = c.cfg.Store.Batch(ctx, func(tx *store.Store) error {
 		if err := tx.PutMessage(ctx, c.cfg.InstanceID, &store.StoredMessage{
 			Chat: chat.String(), ID: id, Sender: sender.String(), FromMe: fromMe, SentAt: at,
 			PushName: pushName, Type: typ, Content: content, Source: "live",

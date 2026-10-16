@@ -51,6 +51,9 @@ func ParseMasterKey(s string) ([]byte, error) {
 // handing one instance's key to another.
 type sealer struct {
 	aead cipher.AEAD
+	// keyMAC keys the HMAC stored for API keys (separate HKDF label, so it
+	// is independent of the encryption key).
+	keyMAC []byte
 }
 
 func newSealer(masterKey []byte) (*sealer, error) {
@@ -61,7 +64,7 @@ func newSealer(masterKey []byte) (*sealer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sealer{aead: aead}, nil
+	return &sealer{aead: aead, keyMAC: cryptoutil.HKDF(masterKey, nil, "wax/store/api-keys/v1", 32)}, nil
 }
 
 // seal returns version || nonce || ciphertext.

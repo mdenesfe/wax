@@ -9,11 +9,41 @@ import (
 // (always 0: we never compress outgoing stanzas). The result is ready to be
 // passed to the Noise transport.
 func Marshal(n Node) ([]byte, error) {
-	e := encoder{buf: make([]byte, 1, 256)}
+	e := encoder{buf: make([]byte, 1, 1+sizeHint(&n))}
 	if err := e.writeNode(&n, 0); err != nil {
 		return nil, err
 	}
 	return e.buf, nil
+}
+
+// sizeHint estimates the encoded size of n (an upper bound for typical
+// stanzas), so Marshal allocates its buffer once instead of regrowing it.
+// It is linear in the node count, like the encoding itself.
+func sizeHint(n *Node) int {
+	size := 4 + len(n.Tag)
+	for k, v := range n.Attrs {
+		size += 4 + len(k)
+		switch v := v.(type) {
+		case string:
+			size += len(v)
+		case JID:
+			size += 8 + len(v.User) + len(v.Server)
+		default:
+			size += 8
+		}
+	}
+	switch c := n.Content.(type) {
+	case []byte:
+		size += 5 + len(c)
+	case string:
+		size += 5 + len(c)
+	case []Node:
+		size += 3
+		for i := range c {
+			size += sizeHint(&c[i])
+		}
+	}
+	return size
 }
 
 type encoder struct {

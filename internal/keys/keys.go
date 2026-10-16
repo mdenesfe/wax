@@ -10,6 +10,7 @@ package keys
 import (
 	"crypto/ecdh"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 )
@@ -24,6 +25,10 @@ var ErrInvalidKey = errors.New("keys: invalid key")
 type KeyPair struct {
 	Priv [KeySize]byte
 	Pub  [KeySize]byte
+	// sk caches the parsed private key of pairs created by this package, so
+	// DH does not repeat the public key scalar multiplication that
+	// ecdh.NewPrivateKey performs. It is used only while it matches Priv.
+	sk *ecdh.PrivateKey
 }
 
 // NewKeyPair generates a random X25519 key pair.
@@ -33,6 +38,14 @@ func NewKeyPair() (*KeyPair, error) {
 		return nil, fmt.Errorf("keys: generate x25519 key: %w", err)
 	}
 	return keyPairFromECDH(priv), nil
+}
+
+// KeyPairFromStored rebuilds a key pair from a private key and the public
+// key that was stored with it. The public key is trusted, not recomputed
+// (that would cost a scalar multiplication); use it only for pairs read
+// back from authenticated storage.
+func KeyPairFromStored(priv, pub [KeySize]byte) KeyPair {
+	return KeyPair{Priv: priv, Pub: pub}
 }
 
 // KeyPairFromPrivate reconstructs a key pair from its 32-byte private key.
@@ -45,7 +58,7 @@ func KeyPairFromPrivate(priv []byte) (*KeyPair, error) {
 }
 
 func keyPairFromECDH(k *ecdh.PrivateKey) *KeyPair {
-	var kp KeyPair
+	kp := KeyPair{sk: k}
 	copy(kp.Priv[:], k.Bytes())
 	copy(kp.Pub[:], k.PublicKey().Bytes())
 	return &kp
@@ -55,15 +68,33 @@ func keyPairFromECDH(k *ecdh.PrivateKey) *KeyPair {
 // the given public key. It fails for low-order public keys (all-zero output),
 // which protects every caller against small-subgroup attacks.
 func (kp *KeyPair) DH(pub [KeySize]byte) ([KeySize]byte, error) {
+	if kp.sk != nil && subtle.ConstantTimeCompare(kp.sk.Bytes(), kp.Priv[:]) == 1 {
+		return dh(kp.sk, pub)
+	}
 	return DH(kp.Priv, pub)
 }
 
+// PrepareDH parses the private key once so later DH calls skip that work.
+// Call it before the pair is shared between goroutines.
+func (kp *KeyPair) PrepareDH() error {
+	sk, err := ecdh.X25519().NewPrivateKey(kp.Priv[:])
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidKey, err)
+	}
+	kp.sk = sk
+	return nil
+}
+
 // DH computes the X25519 shared secret of priv and pub.
-func DH(priv, pub [KeySize]byte) (out [KeySize]byte, err error) {
+func DH(priv, pub [KeySize]byte) ([KeySize]byte, error) {
 	sk, err := ecdh.X25519().NewPrivateKey(priv[:])
 	if err != nil {
-		return out, fmt.Errorf("%w: private: %w", ErrInvalidKey, err)
+		return [KeySize]byte{}, fmt.Errorf("%w: private: %w", ErrInvalidKey, err)
 	}
+	return dh(sk, pub)
+}
+
+func dh(sk *ecdh.PrivateKey, pub [KeySize]byte) (out [KeySize]byte, err error) {
 	pk, err := ecdh.X25519().NewPublicKey(pub[:])
 	if err != nil {
 		return out, fmt.Errorf("%w: public: %w", ErrInvalidKey, err)

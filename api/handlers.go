@@ -2,9 +2,10 @@ package api
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -29,15 +30,28 @@ type instanceJSON struct {
 	QRPending     bool   `json:"qr_pending"`
 }
 
-func describe(in *manager.Instance) instanceJSON {
-	cfg := in.Config()
-	out := instanceJSON{ID: in.ID, Status: string(in.Status()), WebhookURL: cfg.WebhookURL, RatePerMinute: cfg.RatePerMinute, QRPending: in.QR() != ""}
-	if cl := in.Client(); cl != nil {
-		if jid, lid, ok := cl.OwnJID(); ok {
-			out.JID, out.LID = jid.ToNonAD().String(), lid.ToNonAD().String()
-		}
+func describe(v manager.View) instanceJSON {
+	out := instanceJSON{ID: v.Name, Status: string(v.Status), WebhookURL: v.WebhookURL, RatePerMinute: v.RatePerMinute, QRPending: v.QRPending}
+	if !v.JID.IsEmpty() {
+		out.JID = v.JID.String()
+	}
+	if !v.LID.IsEmpty() {
+		out.LID = v.LID.String()
 	}
 	return out
+}
+
+// view answers with the current view of one instance.
+func (s *Server) view(w http.ResponseWriter, r *http.Request, status int, name string) {
+	views, err := s.m.Views(r.Context(), tenantOf(r), name)
+	if err == nil && len(views) == 0 {
+		err = manager.ErrNotFound
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, status, describe(views[0]))
 }
 
 type instanceRequest struct {
@@ -48,8 +62,11 @@ type instanceRequest struct {
 }
 
 func (req instanceRequest) validate() error {
-	if req.WebhookURL != "" && !strings.HasPrefix(req.WebhookURL, "https://") && !strings.HasPrefix(req.WebhookURL, "http://") {
-		return badRequest("webhook_url must be an http(s) URL")
+	if req.WebhookURL != "" {
+		u, err := url.Parse(req.WebhookURL)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil {
+			return badRequest("webhook_url must be an absolute http(s) URL without credentials")
+		}
 	}
 	if req.RatePerMinute < 0 || req.RatePerMinute > 600 {
 		return badRequest("rate_per_minute must be between 1 and 600")
@@ -57,8 +74,11 @@ func (req instanceRequest) validate() error {
 	return nil
 }
 
-func (req instanceRequest) config() store.Instance {
-	return store.Instance{ID: req.ID, WebhookURL: req.WebhookURL, WebhookSecret: []byte(req.WebhookSecret), RatePerMinute: req.RatePerMinute}
+// config builds the stored configuration; for an update, id is the
+// instance's internal id.
+func (req instanceRequest) config(tenant, id string) store.Instance {
+	return store.Instance{ID: id, TenantID: tenant, Name: req.ID, WebhookURL: req.WebhookURL,
+		WebhookSecret: []byte(req.WebhookSecret), RatePerMinute: req.RatePerMinute}
 }
 
 func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
@@ -71,71 +91,83 @@ func (s *Server) createInstance(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	in, err := s.m.Create(r.Context(), req.config())
+	if _, err := s.m.Create(r.Context(), req.config(tenantOf(r), "")); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.view(w, r, http.StatusCreated, req.ID)
+}
+
+func (s *Server) listInstances(w http.ResponseWriter, r *http.Request) {
+	views, err := s.m.Views(r.Context(), tenantOf(r), "")
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, describe(in))
-}
-
-func (s *Server) listInstances(w http.ResponseWriter, _ *http.Request) {
-	list := s.m.List()
-	out := make([]instanceJSON, len(list))
-	for i, in := range list {
-		out[i] = describe(in)
+	out := make([]instanceJSON, len(views))
+	for i, v := range views {
+		out[i] = describe(v)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) getInstance(w http.ResponseWriter, r *http.Request) {
-	in, err := s.instance(r)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, describe(in))
+func (s *Server) getInstance(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	s.view(w, r, http.StatusOK, in.Name)
 }
 
-func (s *Server) updateInstance(w http.ResponseWriter, r *http.Request) {
-	var req instanceRequest
-	if err := decode(r, &req); err != nil {
+// instancePatch is a partial update: absent fields keep their value (a
+// PATCH without webhook_secret must not silently turn signing off).
+type instancePatch struct {
+	WebhookURL    *string `json:"webhook_url"`
+	WebhookSecret *string `json:"webhook_secret"`
+	RatePerMinute *int    `json:"rate_per_minute"`
+}
+
+func (s *Server) updateInstance(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	var patch instancePatch
+	if err := decode(r, &patch); err != nil {
 		s.fail(w, err)
 		return
 	}
-	req.ID = r.PathValue("id")
+	cur := in.Config()
+	req := instanceRequest{ID: cur.Name, WebhookURL: cur.WebhookURL, WebhookSecret: string(cur.WebhookSecret), RatePerMinute: cur.RatePerMinute}
+	if patch.WebhookURL != nil {
+		req.WebhookURL = *patch.WebhookURL
+	}
+	if patch.WebhookSecret != nil {
+		req.WebhookSecret = *patch.WebhookSecret
+	}
+	if patch.RatePerMinute != nil {
+		req.RatePerMinute = *patch.RatePerMinute
+	}
 	if err := req.validate(); err != nil {
 		s.fail(w, err)
 		return
 	}
-	if err := s.m.Update(r.Context(), req.config()); err != nil {
+	if err := s.m.Update(r.Context(), in, req.config(in.TenantID, in.ID)); err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.getInstance(w, r)
+	s.getInstance(w, r, in)
 }
 
-func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request) {
-	if err := s.m.Delete(r.Context(), r.PathValue("id")); err != nil {
+func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	if err := s.m.Delete(r.Context(), in); err != nil {
 		s.fail(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	if err := s.m.Connect(r.PathValue("id")); err != nil {
-		s.fail(w, err)
-		return
-	}
+func (s *Server) connect(w http.ResponseWriter, _ *http.Request, in *manager.Instance) {
+	s.m.Connect(in)
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // qr returns the pending QR code as JSON, or as PNG with ?format=png.
-func (s *Server) qr(w http.ResponseWriter, r *http.Request) {
-	in, err := s.instance(r)
-	if err != nil {
-		s.fail(w, err)
+func (s *Server) qr(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	if !in.Running() {
+		s.fail(w, manager.ErrNotRunning)
 		return
 	}
 	code := in.QR()
@@ -201,7 +233,13 @@ func (req *sendRequest) payload() (kind string, data []byte, err error) {
 	return "", nil, badRequest("text or media is required")
 }
 
-func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	release, err := s.acquireLarge(r)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	defer release()
 	var req sendRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, err)
@@ -217,9 +255,9 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	it := &store.OutboxItem{Instance: r.PathValue("id"), ClientID: req.ClientID, Chat: to.String(),
+	it := &store.OutboxItem{ClientID: req.ClientID, Chat: to.String(),
 		MessageID: client.GenerateMessageID(), Kind: kind, Payload: payload}
-	created, err := s.m.Enqueue(r.Context(), it)
+	created, err := s.m.Enqueue(r.Context(), in, it)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -227,13 +265,13 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"outbox_id": it.ID, "message_id": it.MessageID, "status": it.Status, "duplicate": !created})
 }
 
-func (s *Server) outboxStatus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) outboxStatus(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
 	id, err := strconv.ParseInt(r.PathValue("oid"), 10, 64)
 	if err != nil {
 		s.fail(w, badRequest("invalid outbox id"))
 		return
 	}
-	it, err := s.store.GetOutbox(r.Context(), r.PathValue("id"), id)
+	it, err := s.store.GetOutbox(r.Context(), in.ID, id)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -244,12 +282,8 @@ func (s *Server) outboxStatus(w http.ResponseWriter, r *http.Request) {
 
 // --- reading ------------------------------------------------------------------------
 
-func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.instance(r); err != nil {
-		s.fail(w, err)
-		return
-	}
-	chats, err := s.store.ListChats(r.Context(), r.PathValue("id"), intQuery(r, "limit", 50, 500), intQuery(r, "offset", 0, 1<<30))
+func (s *Server) listChats(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	chats, err := s.store.ListChats(r.Context(), in.ID, intQuery(r, "limit", 50, 500), intQuery(r, "offset", 0, 1<<30))
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -257,12 +291,7 @@ func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, chats)
 }
 
-func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, err := s.instance(r); err != nil {
-		s.fail(w, err)
-		return
-	}
+func (s *Server) listMessages(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
 	before := time.Now().Add(time.Hour)
 	if b := r.URL.Query().Get("before"); b != "" {
 		t, err := time.Parse(time.RFC3339, b)
@@ -272,14 +301,14 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		before = t
 	}
-	rows, err := s.store.Messages(r.Context(), id, r.PathValue("chat"), before, intQuery(r, "limit", 50, 500))
+	rows, err := s.store.Messages(r.Context(), in.ID, r.PathValue("chat"), before, intQuery(r, "limit", 50, 500))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := make([]manager.MessageJSON, 0, len(rows))
 	for _, m := range rows {
-		out = append(out, messageJSON(id, &m))
+		out = append(out, messageJSON(in.Name, &m))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -297,12 +326,8 @@ func messageJSON(instance string, m *store.StoredMessage) manager.MessageJSON {
 
 // --- actions needing a live connection ---------------------------------------------
 
-// connected returns the logged-in client of the request's instance.
-func (s *Server) connected(r *http.Request) (*client.Client, error) {
-	in, err := s.instance(r)
-	if err != nil {
-		return nil, err
-	}
+// connected returns the instance's logged-in client.
+func connected(in *manager.Instance) (*client.Client, error) {
 	cl := in.Client()
 	if cl == nil || !cl.IsLoggedIn() {
 		return nil, manager.ErrNotConnected
@@ -310,13 +335,13 @@ func (s *Server) connected(r *http.Request) (*client.Client, error) {
 	return cl, nil
 }
 
-func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
-	cl, err := s.connected(r)
+func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	cl, err := connected(in)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	m, err := s.store.GetMessage(r.Context(), r.PathValue("id"), r.PathValue("chat"), r.PathValue("mid"))
+	m, err := s.store.GetMessage(r.Context(), in.ID, r.PathValue("chat"), r.PathValue("mid"))
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -327,19 +352,22 @@ func (s *Server) downloadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, err := cl.Download(r.Context(), &msg)
-	if err == client.ErrNoMedia {
+	if errors.Is(err, client.ErrNoMedia) {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.upstream(w, r, err)
 		return
 	}
+	// Peer-supplied bytes: never let a browser sniff or render them.
 	w.Header().Set("Content-Type", http.DetectContentType(data))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", "attachment")
 	_, _ = w.Write(data)
 }
 
-func (s *Server) markRead(w http.ResponseWriter, r *http.Request) {
+func (s *Server) markRead(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
 	var req struct {
 		Chat   string   `json:"chat"`
 		Sender string   `json:"sender"`
@@ -355,10 +383,10 @@ func (s *Server) markRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sender, _ := wabin.ParseJID(req.Sender)
-	s.act(w, r, func(cl *client.Client) error { return cl.MarkRead(r.Context(), chat, sender, req.IDs, time.Now()) })
+	s.act(w, r, in, func(cl *client.Client) error { return cl.MarkRead(r.Context(), chat, sender, req.IDs, time.Now()) })
 }
 
-func (s *Server) presence(w http.ResponseWriter, r *http.Request) {
+func (s *Server) presence(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
 	var req struct {
 		Available bool `json:"available"`
 	}
@@ -366,10 +394,10 @@ func (s *Server) presence(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.act(w, r, func(cl *client.Client) error { return cl.SendPresence(r.Context(), req.Available) })
+	s.act(w, r, in, func(cl *client.Client) error { return cl.SendPresence(r.Context(), req.Available) })
 }
 
-func (s *Server) rejectCall(w http.ResponseWriter, r *http.Request) {
+func (s *Server) rejectCall(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
 	var req struct {
 		From string `json:"from"`
 	}
@@ -382,11 +410,11 @@ func (s *Server) rejectCall(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, badRequest("from must be the caller's JID"))
 		return
 	}
-	s.act(w, r, func(cl *client.Client) error { return cl.RejectCall(r.Context(), from, r.PathValue("call")) })
+	s.act(w, r, in, func(cl *client.Client) error { return cl.RejectCall(r.Context(), from, r.PathValue("call")) })
 }
 
-func (s *Server) groupInfo(w http.ResponseWriter, r *http.Request) {
-	cl, err := s.connected(r)
+func (s *Server) groupInfo(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	cl, err := connected(in)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -398,21 +426,21 @@ func (s *Server) groupInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	gi, err := cl.GetGroupInfo(r.Context(), g)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.upstream(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, gi)
 }
 
 // act runs fn on the connected client and answers 204 or the error.
-func (s *Server) act(w http.ResponseWriter, r *http.Request, fn func(*client.Client) error) {
-	cl, err := s.connected(r)
+func (s *Server) act(w http.ResponseWriter, r *http.Request, in *manager.Instance, fn func(*client.Client) error) {
+	cl, err := connected(in)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	if err := fn(cl); err != nil {
-		writeError(w, http.StatusBadGateway, err)
+		s.upstream(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -422,7 +450,7 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request, fn func(*client.Cli
 func recipient(s string) (wabin.JID, error) {
 	j, err := wabin.ParseRecipient(s)
 	if err != nil {
-		return wabin.JID{}, badRequest(err.Error())
+		return wabin.JID{}, badRequest("invalid recipient: use a phone number (digits) or a JID")
 	}
 	return j, nil
 }

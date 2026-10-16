@@ -106,3 +106,17 @@ func TestDescribeMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckWebhookAddr(t *testing.T) {
+	for _, bad := range []string{"127.0.0.1:80", "[::1]:443", "10.1.2.3:80", "192.168.1.5:80", "169.254.169.254:80",
+		"[fe80::1]:80", "0.0.0.0:80", "100.64.0.1:80", "[::ffff:127.0.0.1]:80"} {
+		if err := checkWebhookAddr(bad); !errors.Is(err, ErrWebhookAddress) {
+			t.Errorf("%s: got %v", bad, err)
+		}
+	}
+	for _, good := range []string{"93.184.216.34:443", "[2606:2800:220:1::1]:443"} {
+		if err := checkWebhookAddr(good); err != nil {
+			t.Errorf("%s rejected: %v", good, err)
+		}
+	}
+}

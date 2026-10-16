@@ -38,7 +38,7 @@ type rootKey [32]byte
 // createChain performs one DH ratchet step: it mixes DH(ours, theirs) into
 // the root key and returns the new root key and a fresh chain key.
 func (rk rootKey) createChain(theirRatchet [32]byte, ours *keys.KeyPair) (rootKey, chainKey, error) {
-	secret, err := keys.DH(ours.Priv, theirRatchet)
+	secret, err := ours.DH(theirRatchet)
 	if err != nil {
 		return rootKey{}, chainKey{}, fmt.Errorf("%w: ratchet dh: %w", ErrInvalidMessage, err)
 	}

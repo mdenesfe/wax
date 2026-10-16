@@ -22,14 +22,14 @@ import (
 var testGroup = wabin.JID{User: "120363000000000001", Server: wabin.ServerGroup}
 
 // loggedIn pairs, logs in and returns the connection and our uploaded bundle.
-func loggedIn(t *testing.T, tweak func(*Config)) (*harness, *fakewa.Conn, *signal.PreKeyBundle) {
+func loggedIn(t testing.TB, tweak func(*Config)) (*harness, *fakewa.Conn, *signal.PreKeyBundle) {
 	h := newHarness(t, tweak)
 	_, c := h.pair()
 	up := h.serveLoginUpload(c, 0)
 	return h, c, ourBundle(t, up)
 }
 
-func (p *peer) senderKeyMessage(t *testing.T, rec *signal.SenderKeyRecord, msg *wae2e.Message) wabin.Node {
+func (p *peer) senderKeyMessage(t testing.TB, rec *signal.SenderKeyRecord, msg *wae2e.Message) wabin.Node {
 	t.Helper()
 	raw, _ := proto.Marshal(msg)
 	ct, err := rec.EncryptGroup(padMessage(raw))
@@ -85,7 +85,7 @@ func TestReceiveGroupMessage(t *testing.T) {
 
 // groupServer answers the IQs a group send needs.
 type groupServer struct {
-	t       *testing.T
+	t       testing.TB
 	h       *harness
 	c       *fakewa.Conn
 	ownLID  wabin.JID
@@ -282,7 +282,7 @@ func TestCallsPresenceAndReceipts(t *testing.T) {
 }
 
 // fakeMediaServer stores uploads and serves them back.
-func fakeMediaServer(t *testing.T) (*httptest.Server, string) {
+func fakeMediaServer(t testing.TB) (*httptest.Server, string) {
 	var mu sync.Mutex
 	files := map[string][]byte{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

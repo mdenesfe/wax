@@ -30,11 +30,19 @@ const (
 	StatusBanned     Status = "banned"     // temporary ban; retried later
 	StatusFailed     Status = "failed"     // unexpected error; retried later
 	StatusStopped    Status = "stopped"
+	StatusUnassigned Status = "unassigned" // no node runs it (none alive, or all at capacity)
 )
 
 // Instance is one WhatsApp account connection managed by the Manager.
+// ID is the internal key; TenantID and Name identify it through the API
+// (Name is what the tenant sees, also in webhooks).
 type Instance struct {
-	ID string
+	ID       string
+	TenantID string
+	Name     string
+	// running is set for instances this node runs (it holds the lease);
+	// others are detached views of the configuration.
+	running bool
 
 	m   *Manager
 	log *slog.Logger
@@ -56,7 +64,7 @@ type Instance struct {
 
 func newInstance(m *Manager, cfg store.Instance) *Instance {
 	in := &Instance{
-		ID: cfg.ID, m: m, cfg: cfg,
+		ID: cfg.ID, TenantID: cfg.TenantID, Name: cfg.Name, m: m, cfg: cfg,
 		log:        m.log.With("instance", cfg.ID),
 		connect:    make(chan struct{}, 1),
 		hookKick:   make(chan struct{}, 1),
@@ -78,7 +86,14 @@ func (in *Instance) QR() string {
 	return s
 }
 
-func (in *Instance) setStatus(s Status) { in.status.Store(s) }
+// setStatus records a state change and asks the lease loop to publish it.
+func (in *Instance) setStatus(s Status) {
+	in.status.Store(s)
+	kick(in.m.publish)
+}
+
+// Running reports whether this node runs the instance.
+func (in *Instance) Running() bool { return in.running }
 
 func (in *Instance) client() *client.Client { return in.cl.Load() }
 
@@ -207,23 +222,30 @@ func (in *Instance) onEvent(e client.Event) {
 	case client.Disconnected:
 		in.setStatus(StatusConnecting)
 	}
-	name, data, ok := toWebhook(in.ID, e)
+	name, data, ok := toWebhook(in.Name, e)
 	if ok {
 		in.emitWebhook(name, data)
 	}
 }
+
+// webhookEnqueueTimeout bounds the database write of one webhook event.
+const webhookEnqueueTimeout = 5 * time.Second
 
 // emitWebhook queues an event for this instance's webhook (if configured).
 func (in *Instance) emitWebhook(event string, data any) {
 	if in.config().WebhookURL == "" {
 		return
 	}
-	body, err := json.Marshal(Envelope{Event: event, Instance: in.ID, Timestamp: time.Now().UTC(), Data: data})
+	body, err := json.Marshal(Envelope{Event: event, Instance: in.Name, Timestamp: time.Now().UTC(), Data: data})
 	if err != nil {
 		in.log.Error("webhook payload encoding failed", "event", event, "error", err)
 		return
 	}
-	if err := in.m.store.EnqueueWebhook(context.Background(), in.ID, event, body); err != nil {
+	// Bounded: events are emitted from the client's handler goroutine, which
+	// must not hang on a slow database (nor block shutdown).
+	ctx, cancel := context.WithTimeout(context.Background(), webhookEnqueueTimeout)
+	defer cancel()
+	if err := in.m.store.EnqueueWebhook(ctx, in.ID, event, body); err != nil {
 		in.log.Error("webhook enqueue failed", "event", event, "error", err)
 		return
 	}

@@ -23,7 +23,7 @@ import (
 
 // syncServer plays WhatsApp's app state endpoints and our phone.
 type syncServer struct {
-	t       *testing.T
+	t       testing.TB
 	h       *harness
 	c       *fakewa.Conn
 	host    string // fake media server

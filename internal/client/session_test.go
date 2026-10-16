@@ -25,7 +25,7 @@ import (
 const testUser = "905550000000"
 
 type harness struct {
-	t       *testing.T
+	t       testing.TB
 	ctx     context.Context
 	store   *store.Store
 	srv     *fakewa.Server
@@ -36,7 +36,7 @@ type harness struct {
 	backlog []Event
 }
 
-func newHarness(t *testing.T, tweak func(*Config)) *harness {
+func newHarness(t testing.TB, tweak func(*Config)) *harness {
 	t.Helper()
 	dsn := os.Getenv("WAX_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -127,7 +127,7 @@ func (h *harness) waitRun() error {
 	}
 }
 
-func must(t *testing.T, err error) {
+func must(t testing.TB, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/mdenesfe/wax/internal/store"
@@ -40,40 +39,8 @@ var ErrGroupNotFound = errors.New("client: group not found or not a member")
 // groupCacheTTL bounds staleness when a w:gp2 notification is missed.
 const groupCacheTTL = time.Hour
 
-type groupCache struct {
-	mu      sync.Mutex
-	entries map[wabin.JID]groupEntry
-}
-
-type groupEntry struct {
-	info    *GroupInfo
-	fetched time.Time
-}
-
-func (g *groupCache) get(j wabin.JID) (*GroupInfo, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	e, ok := g.entries[j]
-	if !ok || time.Since(e.fetched) > groupCacheTTL {
-		return nil, false
-	}
-	return e.info, true
-}
-
-func (g *groupCache) put(info *GroupInfo) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.entries == nil {
-		g.entries = make(map[wabin.JID]groupEntry)
-	}
-	g.entries[info.JID] = groupEntry{info: info, fetched: time.Now()}
-}
-
-func (g *groupCache) invalidate(j wabin.JID) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.entries, j)
-}
+// groupCache maps a group JID to its metadata.
+type groupCache = ttlCache[wabin.JID, *GroupInfo]
 
 // GetGroupInfo fetches group metadata from the server (and caches it).
 func (c *Client) GetGroupInfo(ctx context.Context, group wabin.JID) (*GroupInfo, error) {
@@ -117,7 +84,7 @@ func (c *Client) fetchGroupInfo(ctx context.Context, s *session, group wabin.JID
 			c.learnLID(ctx, p.PhoneNumber, p.LID)
 		}
 	}
-	c.groups.put(gi)
+	c.groups.put(gi.JID, gi)
 	return gi, nil
 }
 

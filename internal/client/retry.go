@@ -81,7 +81,6 @@ func (s *session) sendRetryReceipt(n *wabin.Node, info *MessageInfo) {
 
 // handleReceipt processes delivery/read/retry receipts for our messages.
 func (s *session) handleReceipt(n *wabin.Node) {
-	defer s.ackReceipt(n)
 	from, _ := n.AttrJID("from")
 	typ, _ := n.AttrString("type")
 	base := Receipt{Type: typ, Sender: from, Chat: from.ToNonAD()}
@@ -97,16 +96,26 @@ func (s *session) handleReceipt(n *wabin.Node) {
 	// Aggregated group receipts: <participants key="msgid"><user jid t/>...
 	if parts := n.ChildrenByTag("participants"); len(parts) > 0 {
 		s.emitAggregatedReceipts(parts, base)
+		s.ackReceipt(n)
 		return
 	}
 	r := base
 	r.IDs = receiptIDs(n)
-	if typ == "retry" {
+	if typ != "retry" {
+		s.c.emit(r)
+		s.ackReceipt(n)
+		return
+	}
+	// Answering may need a prekey fetch (an IQ round trip); keep it off the
+	// handler so other stanzas are not delayed. The receipt is acknowledged
+	// after the resend, in the same order as before.
+	s.goSafe("retry-receipt", func() {
 		if err := s.handleRetryReceipt(n, &r); err != nil {
 			s.log.Warn("could not answer retry receipt", "id", r.IDs, "error", err)
 		}
-	}
-	s.c.emit(r)
+		s.c.emit(r)
+		s.ackReceipt(n)
+	})
 }
 
 // emitAggregatedReceipts emits one receipt per user and message of a
@@ -143,13 +152,7 @@ func receiptIDs(n *wabin.Node) []string {
 }
 
 func (s *session) ackReceipt(n *wabin.Node) {
-	attrs := wabin.Attrs{"class": "receipt", "id": n.Attrs["id"], "to": n.Attrs["from"]}
-	if t, ok := n.Attrs["type"]; ok {
-		attrs["type"] = t
-	}
-	if p, ok := n.Attrs["participant"]; ok {
-		attrs["participant"] = p
-	}
+	attrs := wabin.Attrs{"class": "receipt", "id": n.Attrs["id"], "to": n.Attrs["from"]}.CopyFrom(n.Attrs, "type", "participant")
 	s.sendOrLog(wabin.Node{Tag: "ack", Attrs: attrs})
 }
 

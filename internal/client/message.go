@@ -351,31 +351,35 @@ func (s *session) decryptEnc(info *MessageInfo, from wabin.JID, enc *wabin.Node,
 	var padded []byte
 	var identityChanged bool
 	err := c.cfg.Store.InTx(s.ctx, func(tx *store.Store) error {
-		buf, err := tx.GetBufferedEvent(s.ctx, c.cfg.InstanceID, hash)
+		// One round trip for the reads, one for the writes.
+		st, err := tx.LoadDecryptState(s.ctx, c.cfg.InstanceID, addr, hash)
 		switch {
 		case err != nil:
 			return err
-		case buf != nil && buf.Plaintext == nil:
+		case st.Buffered != nil && st.Buffered.Plaintext == nil:
 			return errAlreadyHandled
-		case buf != nil:
-			padded = buf.Plaintext
+		case st.Buffered != nil:
+			padded = st.Buffered.Plaintext
 			return nil
 		}
-		rec, err := tx.LoadSession(s.ctx, c.cfg.InstanceID, addr)
-		if err != nil {
-			return err
-		}
 		var remoteIdentity [32]byte
-		if padded, remoteIdentity, err = s.decryptSession(tx, rec, encType, ct); err != nil {
+		if padded, remoteIdentity, err = s.decryptSession(tx, st.Session, encType, ct); err != nil {
 			return err
 		}
-		if identityChanged, err = trackIdentity(s.ctx, tx, c.cfg.InstanceID, addr, remoteIdentity); err != nil {
-			return err
-		}
-		if err := tx.PutSession(s.ctx, c.cfg.InstanceID, addr, rec); err != nil {
-			return err
-		}
-		return tx.PutBufferedEvent(s.ctx, c.cfg.InstanceID, hash, padded, info.Timestamp)
+		// Trust on first use, auto-accepting changes like WhatsApp clients
+		// do (users reinstall often); a change is reported as an event.
+		identityChanged = st.Identity != nil && *st.Identity != remoteIdentity
+		return tx.Batch(s.ctx, func(b *store.Store) error {
+			if st.Identity == nil || identityChanged {
+				if err := b.PutIdentity(s.ctx, c.cfg.InstanceID, addr, remoteIdentity); err != nil {
+					return err
+				}
+			}
+			if err := b.PutSession(s.ctx, c.cfg.InstanceID, addr, st.Session); err != nil {
+				return err
+			}
+			return b.PutBufferedEvent(s.ctx, c.cfg.InstanceID, hash, padded, info.Timestamp)
+		})
 	})
 	if err != nil {
 		return nil, nil, err
@@ -430,18 +434,6 @@ func (s *session) decryptSession(tx *store.Store, rec *signal.Record, encType st
 	return res.Plaintext, res.RemoteIdentity, nil
 }
 
-// trackIdentity stores a peer's identity key and reports whether it
-// changed. Changes are accepted (trust on first use, like WhatsApp
-// clients, since users reinstall often) and surfaced as an event.
-func trackIdentity(ctx context.Context, tx *store.Store, inst, addr string, identity [32]byte) (bool, error) {
-	prev, err := tx.GetIdentity(ctx, inst, addr)
-	changed := err == nil && prev != identity
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return false, err
-	}
-	return changed, tx.PutIdentity(ctx, inst, addr, identity)
-}
-
 func (s *session) markHandled(hash []byte) {
 	if err := s.c.cfg.Store.MarkEventHandled(context.WithoutCancel(s.ctx), s.c.cfg.InstanceID, hash); err != nil {
 		s.log.Warn("failed to mark event handled", "error", err)
@@ -470,9 +462,14 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 			}
 		}
 		if pr := pm.GetPeerDataOperationRequestResponseMessage(); pr != nil {
-			if err := s.handlePeerDataResponse(pr); err != nil {
-				s.log.Warn("could not process peer data response", "error", err)
-			}
+			// Applying a recovery waits for the app state lock, which a sync
+			// may hold across network round trips: never on the handler.
+			// A lost response is harmless; recovery is requested again.
+			s.goSafe("peer-data-response", func() {
+				if err := s.handlePeerDataResponse(pr); err != nil {
+					s.log.Warn("could not process peer data response", "error", err)
+				}
+			})
 		}
 		if hn := pm.GetHistorySyncNotification(); hn != nil {
 			if err := s.enqueueHistory(hn); err != nil {
@@ -483,8 +480,9 @@ func (s *session) dispatchMessage(info *MessageInfo, msg *wae2e.Message, retries
 	if pm := evt.Message.GetProtocolMessage(); pm == nil || pm.GetType() == wae2e.ProtocolMessage_REVOKE || pm.GetType() == wae2e.ProtocolMessage_MESSAGE_EDIT {
 		s.c.storeLiveMessage(s.ctx, evt.Info.Chat, info.Sender, info.ID, info.IsFromMe, info.Timestamp, info.PushName, evt.Message)
 	}
-	if info.PushName != "" && !info.IsFromMe {
-		if err := s.c.cfg.Store.PutPushName(s.ctx, s.c.cfg.InstanceID, info.Sender.ToNonAD().String(), info.PushName); err != nil {
+	if sender := info.Sender.ToNonAD().String(); info.PushName != "" && !info.IsFromMe && !s.c.nameSeen.unchanged(sender, info.PushName) {
+		if err := s.c.cfg.Store.PutPushName(s.ctx, s.c.cfg.InstanceID, sender, info.PushName); err != nil {
+			s.c.nameSeen.forget(sender)
 			s.log.Debug("push name not stored", "error", err)
 		}
 	}

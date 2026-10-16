@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -127,5 +128,12 @@ func TestTransfer(t *testing.T) {
 	}
 	if _, err := tr.Download(context.Background(), conn, "/v/missing?ccb=11", enc.FileEncSHA256, Image); err == nil {
 		t.Fatal("expected 404 error")
+	}
+}
+
+func TestErrorsDoNotLeakURL(t *testing.T) {
+	err := withoutURL(&url.Error{Op: "Post", URL: "https://mmg.whatsapp.net/mms/image/x?auth=SECRET", Err: errors.New("connection refused")})
+	if strings.Contains(err.Error(), "SECRET") || !strings.Contains(err.Error(), "connection refused") {
+		t.Fatalf("error %q", err)
 	}
 }

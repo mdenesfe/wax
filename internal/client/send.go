@@ -153,8 +153,8 @@ func (c *Client) sendDirect(ctx context.Context, s *session, to wabin.JID, id st
 	c.storeLiveMessage(ctx, to, ownDevice, id, true, res.Timestamp, "", msg)
 	if res.phash != "" && res.phash != participantListHash(devices) {
 		s.log.Warn("server device list differs from ours; refreshing", "chat", wabin.MaskJID(to))
-		c.devCache.invalidate(to)
-		c.devCache.invalidate(ownUser)
+		c.devCache.invalidate(to.ToNonAD())
+		c.devCache.invalidate(ownUser.ToNonAD())
 	}
 	return &res.SendResult, nil
 }
@@ -244,7 +244,7 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 		s.log.Warn("server group device list differs from ours; refreshing", "group", wabin.MaskJID(group))
 		c.groups.invalidate(group)
 		for _, u := range users {
-			c.devCache.invalidate(u)
+			c.devCache.invalidate(u.ToNonAD())
 		}
 	}
 	return &res.SendResult, nil

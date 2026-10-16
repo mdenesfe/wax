@@ -31,7 +31,7 @@ type peer struct {
 	sessions map[string]*signal.Record // by remote address
 }
 
-func newPeer(t *testing.T, jid wabin.JID, reg uint32) *peer {
+func newPeer(t testing.TB, jid wabin.JID, reg uint32) *peer {
 	ident, _ := keys.NewSigningKey()
 	spk, _ := keys.NewKeyPair()
 	opk, _ := keys.NewKeyPair()
@@ -77,7 +77,7 @@ func (p *peer) bundleNode() wabin.Node {
 }
 
 // decrypt opens an <enc> addressed to this peer and returns the Message.
-func (p *peer) decrypt(t *testing.T, fromAddr string, enc *wabin.Node) *wae2e.Message {
+func (p *peer) decrypt(t testing.TB, fromAddr string, enc *wabin.Node) *wae2e.Message {
 	t.Helper()
 	ct, _ := enc.Bytes()
 	rec := p.sessions[fromAddr]
@@ -110,7 +110,7 @@ func (p *peer) decrypt(t *testing.T, fromAddr string, enc *wabin.Node) *wae2e.Me
 }
 
 // ourBundle rebuilds our prekey bundle from the upload the client made.
-func ourBundle(t *testing.T, upload *wabin.Node) *signal.PreKeyBundle {
+func ourBundle(t testing.TB, upload *wabin.Node) *signal.PreKeyBundle {
 	t.Helper()
 	reg, _ := upload.Child("registration")
 	regB, _ := reg.Bytes()
@@ -128,7 +128,7 @@ func ourBundle(t *testing.T, upload *wabin.Node) *signal.PreKeyBundle {
 	return b
 }
 
-func encNode(t *testing.T, rec *signal.Record, msg *wae2e.Message) wabin.Node {
+func encNode(t testing.TB, rec *signal.Record, msg *wae2e.Message) wabin.Node {
 	t.Helper()
 	raw, _ := proto.Marshal(msg)
 	typ, ct, err := rec.Encrypt(padMessage(raw))
@@ -142,7 +142,7 @@ func encNode(t *testing.T, rec *signal.Record, msg *wae2e.Message) wabin.Node {
 	return wabin.Node{Tag: "enc", Attrs: wabin.Attrs{"v": "2", "type": encType}, Content: ct}
 }
 
-func readNodeWith(t *testing.T, h *harness, c *fakewa.Conn, tag, id string) *wabin.Node {
+func readNodeWith(t testing.TB, h *harness, c *fakewa.Conn, tag, id string) *wabin.Node {
 	t.Helper()
 	n, err := c.ReadUntil(h.ctx, func(n *wabin.Node) bool {
 		nid, _ := n.AttrString("id")

@@ -76,6 +76,57 @@ func (s *Store) InTx(ctx context.Context, fn func(tx *Store) error) error {
 	})
 }
 
+// Batch runs fn against a Store that queues its writes instead of
+// executing them, then sends them in one round trip. PostgreSQL runs a
+// batch as one implicit transaction (or inside the current one), so the
+// writes are atomic. fn may only call write methods whose result does not
+// depend on the database (reads fail with ErrBatchRead).
+func (s *Store) Batch(ctx context.Context, fn func(b *Store) error) error {
+	q := &batchDB{}
+	if err := fn(&Store{pool: s.pool, db: q, sealer: s.sealer, inTx: true}); err != nil {
+		return err
+	}
+	if q.b.Len() == 0 {
+		return nil
+	}
+	return s.db.SendBatch(ctx, &q.b).Close()
+}
+
+// rowQuery is a single-row read split into its SQL and its decoding, so the
+// same read can run alone (queryRow) or as part of a batched round trip.
+type rowQuery[T any] struct {
+	sql  string
+	args []any
+	scan func(pgx.Row) (T, error)
+}
+
+func queryRow[T any](ctx context.Context, s *Store, q rowQuery[T]) (T, error) {
+	return q.scan(s.db.QueryRow(ctx, q.sql, q.args...))
+}
+
+// ErrBatchRead is returned for reads attempted inside Batch.
+var ErrBatchRead = errors.New("store: read inside a batch")
+
+// batchDB queues Exec calls into a pgx.Batch.
+type batchDB struct{ b pgx.Batch }
+
+func (q *batchDB) Exec(_ context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	q.b.Queue(sql, args...)
+	return pgconn.CommandTag{}, nil
+}
+
+func (q *batchDB) Query(context.Context, string, ...any) (pgx.Rows, error) { return nil, ErrBatchRead }
+
+func (q *batchDB) QueryRow(context.Context, string, ...any) pgx.Row { return errRow{} }
+
+func (q *batchDB) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	panic("store: nested batch")
+}
+
+type errRow struct{}
+
+func (errRow) Scan(...any) error { return ErrBatchRead }
+
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 

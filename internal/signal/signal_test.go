@@ -91,7 +91,7 @@ type party struct {
 	record   *Record
 }
 
-func newParty(t *testing.T, regID uint32) *party {
+func newParty(t testing.TB, regID uint32) *party {
 	ident, err := keys.NewSigningKey()
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ type envelope struct {
 	ct  []byte
 }
 
-func (p *party) send(t *testing.T, msg string) envelope {
+func (p *party) send(t testing.TB, msg string) envelope {
 	t.Helper()
 	typ, ct, err := p.record.Encrypt([]byte(msg))
 	if err != nil {
@@ -149,7 +149,7 @@ func (p *party) send(t *testing.T, msg string) envelope {
 
 // receive decrypts and, like the real store, persists via a marshal/unmarshal
 // round trip so serialization is exercised on every step.
-func (p *party) receive(t *testing.T, e envelope) (string, error) {
+func (p *party) receive(t testing.TB, e envelope) (string, error) {
 	t.Helper()
 	var pt []byte
 	var err error
@@ -178,7 +178,7 @@ func (p *party) receive(t *testing.T, e envelope) (string, error) {
 	return string(pt), nil
 }
 
-func mustReceive(t *testing.T, p *party, e envelope, want string) {
+func mustReceive(t testing.TB, p *party, e envelope, want string) {
 	t.Helper()
 	got, err := p.receive(t, e)
 	if err != nil {
@@ -189,7 +189,7 @@ func mustReceive(t *testing.T, p *party, e envelope, want string) {
 	}
 }
 
-func establish(t *testing.T, withOneTime bool) (alice, bob *party) {
+func establish(t testing.TB, withOneTime bool) (alice, bob *party) {
 	alice, bob = newParty(t, 100), newParty(t, 200)
 	if err := alice.record.ProcessBundle(alice.local(), bob.bundle(withOneTime)); err != nil {
 		t.Fatal(err)

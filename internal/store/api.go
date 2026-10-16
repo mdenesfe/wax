@@ -13,18 +13,28 @@ import (
 // ErrConflict is returned when a unique key already exists.
 var ErrConflict = errors.New("store: already exists")
 
-func isUniqueViolation(err error) bool {
+func isUniqueViolation(err error) bool { return pgCode(err) == "23505" }
+
+func isForeignKeyViolation(err error) bool { return pgCode(err) == "23503" }
+
+func pgCode(err error) string {
 	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23505"
+	if errors.As(err, &pe) {
+		return pe.Code
+	}
+	return ""
 }
 
 // --- instances ------------------------------------------------------------------
 
 const instTable = "wax_instances"
 
-// Instance is an instance's configuration.
+// Instance is an instance's configuration. ID is the internal key used by
+// every table; Name is the id a tenant sees, unique within the tenant.
 type Instance struct {
 	ID            string
+	TenantID      string
+	Name          string
 	WebhookURL    string
 	WebhookSecret []byte
 	RatePerMinute int
@@ -40,12 +50,15 @@ func (s *Store) CreateInstance(ctx context.Context, in *Instance) error {
 	if in.RatePerMinute <= 0 {
 		in.RatePerMinute = 20
 	}
-	err := s.db.QueryRow(ctx, `INSERT INTO wax_instances (id, webhook_url, webhook_secret, rate_per_minute) VALUES ($1, $2, $3, $4) RETURNING created_at`,
-		in.ID, in.WebhookURL, secret, in.RatePerMinute).Scan(&in.CreatedAt)
-	if isUniqueViolation(err) {
+	err := s.db.QueryRow(ctx, `INSERT INTO wax_instances (id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`,
+		in.ID, in.TenantID, in.Name, in.WebhookURL, secret, in.RatePerMinute).Scan(&in.CreatedAt)
+	switch {
+	case isUniqueViolation(err):
 		return ErrConflict
-	}
-	if err != nil {
+	case isForeignKeyViolation(err):
+		return ErrNotFound // unknown tenant
+	case err != nil:
 		return fmt.Errorf("store: create instance: %w", err)
 	}
 	return nil
@@ -70,7 +83,29 @@ func (s *Store) UpdateInstance(ctx context.Context, in *Instance) error {
 
 // ListInstances returns all instances.
 func (s *Store) ListInstances(ctx context.Context) ([]Instance, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, webhook_url, webhook_secret, rate_per_minute, created_at FROM wax_instances ORDER BY id`)
+	return s.instancesWhere(ctx, `true`)
+}
+
+// InstancesByID returns the configurations of the given instances.
+func (s *Store) InstancesByID(ctx context.Context, ids []string) ([]Instance, error) {
+	return s.instancesWhere(ctx, `id = ANY($1)`, ids)
+}
+
+// InstanceByName returns a tenant's instance by its API name.
+func (s *Store) InstanceByName(ctx context.Context, tenant, name string) (*Instance, error) {
+	list, err := s.instancesWhere(ctx, `tenant_id = $1 AND name = $2`, tenant, name)
+	if err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, ErrNotFound
+	}
+	return &list[0], nil
+}
+
+func (s *Store) instancesWhere(ctx context.Context, where string, args ...any) ([]Instance, error) {
+	rows, err := s.db.Query(ctx, `SELECT id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute, created_at
+		FROM wax_instances WHERE `+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list instances: %w", err)
 	}
@@ -79,7 +114,7 @@ func (s *Store) ListInstances(ctx context.Context) ([]Instance, error) {
 	for rows.Next() {
 		var in Instance
 		var enc []byte
-		if err := rows.Scan(&in.ID, &in.WebhookURL, &enc, &in.RatePerMinute, &in.CreatedAt); err != nil {
+		if err := rows.Scan(&in.ID, &in.TenantID, &in.Name, &in.WebhookURL, &enc, &in.RatePerMinute, &in.CreatedAt); err != nil {
 			return nil, err
 		}
 		if enc != nil {

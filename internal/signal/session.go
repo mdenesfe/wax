@@ -231,6 +231,21 @@ func ckFromProto(p *signalstore.ChainKey) (chainKey, error) {
 	return chainKey{key: k, index: p.GetIndex()}, err
 }
 
+// storedKeyPair rebuilds a sender ratchet key pair, trusting the stored
+// public key (records come from sealed storage); records without one are
+// re-derived.
+func storedKeyPair(priv, pub []byte) (*keys.KeyPair, error) {
+	p, err := to32(priv, "sender ratchet private key")
+	if err != nil {
+		return nil, err
+	}
+	if len(pub) != 32 {
+		return keys.KeyPairFromPrivate(p[:])
+	}
+	kp := keys.KeyPairFromStored(p, [32]byte(pub))
+	return &kp, nil
+}
+
 func stateFromProto(pb *signalstore.SessionState) (*sessionState, error) {
 	s := &sessionState{
 		version: pb.GetVersion(), previousCounter: pb.GetPreviousCounter(),
@@ -254,11 +269,7 @@ func stateFromProto(pb *signalstore.SessionState) (*sessionState, error) {
 		}
 	}
 	if sc := pb.GetSenderChain(); sc != nil {
-		priv, err := to32(sc.GetRatchetPrivate(), "sender ratchet private key")
-		if err != nil {
-			return nil, err
-		}
-		kp, err := keys.KeyPairFromPrivate(priv[:])
+		kp, err := storedKeyPair(sc.GetRatchetPrivate(), sc.GetRatchetPublic())
 		if err != nil {
 			return nil, err
 		}

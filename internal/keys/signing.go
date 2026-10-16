@@ -52,17 +52,18 @@ func SigningKeyFromSeed(seed []byte) (*SigningKey, error) {
 	copy(sk.seed[:], seed)
 
 	// Same derivation as RFC 8032 §5.1.5 steps 1-2; X25519 clamps again
-	// internally, which is idempotent.
+	// internally, which is idempotent. The public key is the Montgomery form
+	// of the Ed25519 public key, which avoids a second scalar multiplication.
 	h := sha512.Sum512(seed)
-	scalar := h[:32]
-	scalar[0] &= 248
-	scalar[31] &= 127
-	scalar[31] |= 64
-	kp, err := KeyPairFromPrivate(scalar)
-	if err != nil {
-		return nil, err
+	copy(sk.Priv[:], h[:32])
+	sk.Priv[0] &= 248
+	sk.Priv[31] &= 127
+	sk.Priv[31] |= 64
+	pub, ok := edwardsToMontgomery(sk.ed.Public().(ed25519.PublicKey))
+	if !ok {
+		return nil, fmt.Errorf("%w: degenerate public key", ErrInvalidKey)
 	}
-	sk.KeyPair = *kp
+	sk.Pub = pub
 	return sk, nil
 }
 
@@ -87,43 +88,68 @@ var fieldP = func() *big.Int {
 	return p.Sub(p, big.NewInt(19))
 }()
 
+// leToInt decodes a little-endian field element; the top bit is ignored
+// as in X25519 and RFC 8032.
+func leToInt(v []byte) *big.Int {
+	var be [KeySize]byte
+	for i := range KeySize {
+		be[i] = v[KeySize-1-i]
+	}
+	be[0] &= 0x7f
+	x := new(big.Int).SetBytes(be[:])
+	return x.Mod(x, fieldP)
+}
+
+// intToLE encodes a reduced field element little-endian.
+func intToLE(x *big.Int) (out [KeySize]byte) {
+	var be [KeySize]byte
+	x.FillBytes(be[:])
+	for i := range KeySize {
+		out[i] = be[KeySize-1-i]
+	}
+	return out
+}
+
+// ratio returns num / den mod p (reusing num), or false when den vanishes.
+func ratio(num, den *big.Int) (*big.Int, bool) {
+	num.Mod(num, fieldP)
+	den.Mod(den, fieldP)
+	inv := new(big.Int).ModInverse(den, fieldP)
+	if den.Sign() == 0 || inv == nil {
+		return nil, false
+	}
+	num.Mul(num, inv)
+	return num.Mod(num, fieldP), true
+}
+
 // montgomeryToEdwards converts a Montgomery u-coordinate into a compressed
 // Edwards25519 point with the given sign bit, using the birational map
 // y = (u - 1) / (u + 1) (RFC 7748 §4.1). The inputs are public values, so a
 // variable-time big.Int computation is acceptable here.
 func montgomeryToEdwards(u [KeySize]byte, signBit byte) (ed25519.PublicKey, bool) {
-	// Little-endian to big.Int; the top bit is ignored as in X25519.
-	var be [KeySize]byte
-	for i := range KeySize {
-		be[i] = u[KeySize-1-i]
+	x := leToInt(u[:])
+	y, ok := ratio(new(big.Int).Sub(x, big1), new(big.Int).Add(x, big1))
+	if !ok {
+		return nil, false // u = -1 has no Edwards counterpart
 	}
-	be[0] &= 0x7f
-	uInt := new(big.Int).SetBytes(be[:])
-	uInt.Mod(uInt, fieldP)
-
-	num := new(big.Int).Sub(uInt, big.NewInt(1))
-	num.Mod(num, fieldP)
-	den := new(big.Int).Add(uInt, big.NewInt(1))
-	den.Mod(den, fieldP)
-	if den.Sign() == 0 {
-		// u = -1 has no Edwards counterpart.
-		return nil, false
-	}
-	inv := new(big.Int).ModInverse(den, fieldP)
-	if inv == nil {
-		return nil, false
-	}
-	y := num.Mul(num, inv)
-	y.Mod(y, fieldP)
-
-	out := make(ed25519.PublicKey, ed25519.PublicKeySize)
-	y.FillBytes(be[:])
-	for i := range KeySize {
-		out[i] = be[KeySize-1-i]
-	}
+	out := intToLE(y)
 	out[31] |= signBit << 7
-	return out, true
+	return out[:], true
 }
+
+// edwardsToMontgomery converts a compressed Edwards25519 public key into
+// its Montgomery u-coordinate with u = (1 + y) / (1 - y) (RFC 7748 §4.1).
+// Public input; variable time is fine.
+func edwardsToMontgomery(a ed25519.PublicKey) ([KeySize]byte, bool) {
+	y := leToInt(a)
+	u, ok := ratio(new(big.Int).Add(big1, y), new(big.Int).Sub(big1, y))
+	if !ok {
+		return [KeySize]byte{}, false
+	}
+	return intToLE(u), true
+}
+
+var big1 = big.NewInt(1)
 
 // Verify checks a Curve25519 (libsignal XEdDSA-format) signature made by the
 // owner of the Montgomery public key pub.

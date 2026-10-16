@@ -79,6 +79,10 @@ type env struct {
 	api   *httptest.Server
 	hooks *hookSink
 	hook  *httptest.Server
+	m     *manager.Manager
+
+	tenant string // the test's own tenant
+	key    string // its API key
 }
 
 func setup(t *testing.T) *env {
@@ -99,23 +103,67 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Close)
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	m := manager.New(manager.Config{Store: st, Log: log, ClientURL: srv.URL, Verifier: srv.Verifier, Timing: manager.Timing{
-		WebhookRetry: backoff.Policy{Min: time.Millisecond, Max: 10 * time.Millisecond},
-		OutboxRetry:  backoff.Policy{Min: time.Millisecond, Max: 10 * time.Millisecond},
-		Idle:         50 * time.Millisecond,
-	}})
-	runCtx, stopRun := context.WithCancel(ctx)
-	if err := m.Start(runCtx); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { stopRun(); m.Stop() })
 	e := &env{t: t, ctx: ctx, st: st, srv: srv, hooks: &hookSink{failN: 1}}
-	e.api = httptest.NewServer(New(m, st, testKey, log))
 	e.hook = httptest.NewServer(e.hooks)
-	t.Cleanup(e.api.Close)
 	t.Cleanup(e.hook.Close)
+	first := e.startNode("a")
+	e.m, e.api = first.m, first.api
+	e.tenant, e.key = e.newTenant("t")
 	return e
+}
+
+// newTenant creates a tenant through the admin API and issues it a key.
+// Its instances and the tenant are removed when the test ends.
+// node is one wax process of a test cluster: a manager and its API.
+type node struct {
+	m    *manager.Manager
+	api  *httptest.Server
+	stop context.CancelFunc // cancels the manager's context (a crash: no release)
+}
+
+// testLeaseTTL keeps failover in tests short; leases renew every TTL/3.
+const testLeaseTTL = 900 * time.Millisecond
+
+// startNode starts a manager and its API server, as one node of a cluster
+// sharing the test database and fake server.
+func (e *env) startNode(id string) *node {
+	e.t.Helper()
+	var handler http.Handler
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})).With("node", id)
+	m := manager.New(manager.Config{Store: e.st, Log: log, ClientURL: e.srv.URL, Verifier: e.srv.Verifier, AllowPrivateWebhooks: true,
+		NodeID: fmt.Sprintf("%s-%d", id, time.Now().UnixNano()), Address: api.URL,
+		Timing: manager.Timing{
+			WebhookRetry: backoff.Policy{Min: time.Millisecond, Max: 10 * time.Millisecond},
+			OutboxRetry:  backoff.Policy{Min: time.Millisecond, Max: 10 * time.Millisecond},
+			Idle:         50 * time.Millisecond,
+			LeaseTTL:     testLeaseTTL,
+		}})
+	handler = New(m, e.st, testKey, log)
+	runCtx, cancel := context.WithCancel(e.ctx)
+	if err := m.Start(runCtx); err != nil {
+		e.t.Fatal(err)
+	}
+	e.t.Cleanup(func() { cancel(); m.Stop(); api.Close() })
+	return &node{m: m, api: api, stop: cancel}
+}
+
+func (e *env) newTenant(prefix string) (id, key string) {
+	e.t.Helper()
+	id = fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	e.okAs(testKey, "POST", "/v1/tenants", map[string]any{"id": id, "name": "test"}, http.StatusCreated)
+	var k struct {
+		Key string `json:"key"`
+	}
+	mustT(e.t, json.Unmarshal(e.okAs(testKey, "POST", "/v1/tenants/"+id+"/keys", nil, http.StatusCreated), &k))
+	e.t.Cleanup(func() {
+		views, _ := e.st.InstanceViews(context.Background(), id, "")
+		for _, v := range views {
+			_ = e.st.DeleteInstance(context.Background(), v.ID)
+		}
+		_ = e.st.DeleteTenant(context.Background(), id)
+	})
+	return id, k.Key
 }
 
 func (e *env) call(method, path string, body any, key string) (int, []byte) {
@@ -138,7 +186,13 @@ func (e *env) call(method, path string, body any, key string) (int, []byte) {
 
 func (e *env) ok(method, path string, body any, want int) []byte {
 	e.t.Helper()
-	code, out := e.call(method, path, body, testKey)
+	return e.okAs(e.key, method, path, body, want)
+}
+
+// okAs is ok with an explicit key.
+func (e *env) okAs(key, method, path string, body any, want int) []byte {
+	e.t.Helper()
+	code, out := e.call(method, path, body, key)
 	if code != want {
 		e.t.Fatalf("%s %s: status %d, body %s", method, path, code, out)
 	}
@@ -165,7 +219,7 @@ func (e *env) pairInstance(id string) *fakewa.Conn {
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		code, body := e.call("GET", "/v1/instances/"+id+"/qr", nil, testKey)
+		code, body := e.call("GET", "/v1/instances/"+id+"/qr", nil, e.key)
 		if code == 200 {
 			mustT(t, json.Unmarshal(body, &qr))
 			break
@@ -199,8 +253,8 @@ func (e *env) pairInstance(id string) *fakewa.Conn {
 
 func TestAPIEndToEnd(t *testing.T) {
 	e := setup(t)
-	id := fmt.Sprintf("api-%d", time.Now().UnixNano()%1e9)
-	t.Cleanup(func() { _ = e.st.DeleteInstance(context.Background(), id) })
+	id := "main"
+	internal := manager.InternalID(e.tenant, id)
 
 	// Auth.
 	if code, _ := e.call("GET", "/v1/instances", nil, "wrong"); code != http.StatusUnauthorized {
@@ -247,9 +301,9 @@ func TestAPIEndToEnd(t *testing.T) {
 	// Chats and messages come from the store.
 	chat := "905551111111@s.whatsapp.net"
 	content, _ := proto.Marshal(&wae2e.Message{Conversation: proto.String("selam")})
-	mustT(t, e.st.PutMessage(e.ctx, id, &store.StoredMessage{Chat: chat, ID: "M1", Sender: chat, SentAt: time.Unix(1700000000, 0), Type: "text", Content: content, Source: "live"}))
+	mustT(t, e.st.PutMessage(e.ctx, internal, &store.StoredMessage{Chat: chat, ID: "M1", Sender: chat, SentAt: time.Unix(1700000000, 0), Type: "text", Content: content, Source: "live"}))
 	at := time.Unix(1700000000, 0)
-	mustT(t, e.st.UpdateChat(e.ctx, id, chat, store.ChatUpdate{LastMessageAt: &at}))
+	mustT(t, e.st.UpdateChat(e.ctx, internal, chat, store.ChatUpdate{LastMessageAt: &at}))
 	var chats []store.Chat
 	mustT(t, json.Unmarshal(e.ok("GET", "/v1/instances/"+id+"/chats", nil, 200), &chats))
 	if len(chats) != 1 || chats[0].JID != chat {
@@ -277,4 +331,91 @@ func TestAPIEndToEnd(t *testing.T) {
 	}()
 	e.ok("DELETE", "/v1/instances/"+id, nil, http.StatusNoContent)
 	e.ok("GET", "/v1/instances/"+id, nil, http.StatusNotFound)
+}
+
+// TestTenantIsolation checks that tenants cannot see or touch each other's
+// instances and data, and that the admin and tenant roles are separate.
+func TestTenantIsolation(t *testing.T) {
+	e := setup(t)
+	a, keyA := e.tenant, e.key
+	b, keyB := e.newTenant("u")
+
+	// Both tenants may use the same instance name.
+	e.okAs(keyA, "POST", "/v1/instances", map[string]any{"id": "main"}, http.StatusCreated)
+	e.okAs(keyB, "POST", "/v1/instances", map[string]any{"id": "main"}, http.StatusCreated)
+	e.okAs(keyA, "POST", "/v1/instances", map[string]any{"id": "only-a"}, http.StatusCreated)
+
+	// Data written for A's instance is invisible through B's instance.
+	chat := "905551111111@s.whatsapp.net"
+	content, _ := proto.Marshal(&wae2e.Message{Conversation: proto.String("gizli")})
+	mustT(t, e.st.PutMessage(e.ctx, manager.InternalID(a, "main"), &store.StoredMessage{Chat: chat, ID: "S1", Sender: chat,
+		SentAt: time.Unix(1700000000, 0), Type: "text", Content: content, Source: "live"}))
+	at := time.Unix(1700000000, 0)
+	mustT(t, e.st.UpdateChat(e.ctx, manager.InternalID(a, "main"), chat, store.ChatUpdate{LastMessageAt: &at}))
+	var chats []store.Chat
+	mustT(t, json.Unmarshal(e.okAs(keyB, "GET", "/v1/instances/main/chats", nil, 200), &chats))
+	if len(chats) != 0 {
+		t.Fatalf("tenant B sees A's chats: %+v", chats)
+	}
+	var msgs []manager.MessageJSON
+	mustT(t, json.Unmarshal(e.okAs(keyB, "GET", "/v1/instances/main/chats/"+chat+"/messages", nil, 200), &msgs))
+	if len(msgs) != 0 {
+		t.Fatalf("tenant B sees A's messages: %+v", msgs)
+	}
+	mustT(t, json.Unmarshal(e.okAs(keyA, "GET", "/v1/instances/main/chats/"+chat+"/messages", nil, 200), &msgs))
+	if len(msgs) != 1 || msgs[0].Text != "gizli" {
+		t.Fatalf("tenant A lost its message: %+v", msgs)
+	}
+
+	// Another tenant's instance does not exist for B (404, not 403), on
+	// every kind of route.
+	for _, r := range []struct{ method, path string }{
+		{"GET", "/v1/instances/only-a"},
+		{"PATCH", "/v1/instances/only-a"},
+		{"DELETE", "/v1/instances/only-a"},
+		{"GET", "/v1/instances/only-a/qr"},
+		{"GET", "/v1/instances/only-a/chats"},
+		{"POST", "/v1/instances/only-a/messages"},
+		{"GET", "/v1/instances/only-a/outbox/1"},
+	} {
+		if code, _ := e.call(r.method, r.path, map[string]any{}, keyB); code != http.StatusNotFound {
+			t.Errorf("tenant B %s %s: status %d, want 404", r.method, r.path, code)
+		}
+	}
+	var list []instanceJSON
+	mustT(t, json.Unmarshal(e.okAs(keyB, "GET", "/v1/instances", nil, 200), &list))
+	if len(list) != 1 || list[0].ID != "main" {
+		t.Fatalf("tenant B lists %+v", list)
+	}
+
+	// Roles: the admin key cannot reach instances, tenant keys cannot manage
+	// tenants or keys.
+	if code, _ := e.call("GET", "/v1/instances", nil, testKey); code != http.StatusForbidden {
+		t.Errorf("admin key on instances: %d", code)
+	}
+	if code, _ := e.call("GET", "/v1/tenants", nil, keyA); code != http.StatusForbidden {
+		t.Errorf("tenant key on tenants: %d", code)
+	}
+	if code, _ := e.call("POST", "/v1/tenants/"+b+"/keys", nil, keyA); code != http.StatusForbidden {
+		t.Errorf("tenant A issuing a key for B: %d", code)
+	}
+
+	// A tenant with instances cannot be deleted; a revoked key stops at once.
+	e.okAs(testKey, "DELETE", "/v1/tenants/"+b, nil, http.StatusConflict)
+	var keys []store.APIKey
+	mustT(t, json.Unmarshal(e.okAs(testKey, "GET", "/v1/tenants/"+b+"/keys", nil, 200), &keys))
+	if len(keys) != 1 {
+		t.Fatalf("keys %+v", keys)
+	}
+	e.okAs(testKey, "DELETE", "/v1/tenants/"+b+"/keys/"+keys[0].ID, nil, http.StatusNoContent)
+	if code, _ := e.call("GET", "/v1/instances", nil, keyB); code != http.StatusUnauthorized {
+		t.Errorf("revoked key: %d", code)
+	}
+	// Malformed and forged keys are rejected the same way.
+	forged := keyA[:len(keyA)-4] + "AAAA"
+	for _, k := range []string{"wax_", "wax_zz_zz", forged} {
+		if code, _ := e.call("GET", "/v1/instances", nil, k); code != http.StatusUnauthorized {
+			t.Errorf("key %q accepted: %d", k, code)
+		}
+	}
 }

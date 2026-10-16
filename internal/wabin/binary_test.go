@@ -268,3 +268,33 @@ func TestJIDText(t *testing.T) {
 		}
 	}
 }
+
+// A chain of nested JID tags must fail with ErrTooDeep instead of
+// recursing until the stack overflows (which recover cannot catch).
+func TestNestedJIDDepthLimit(t *testing.T) {
+	data := []byte{tagList8, 1}
+	data = append(data, bytes.Repeat([]byte{tagJIDPair}, 1<<20)...)
+	if _, err := Unmarshal(data); !errors.Is(err, ErrTooDeep) {
+		t.Fatalf("got %v, want ErrTooDeep", err)
+	}
+}
+
+// A missing child is a nil *Node; every read accessor must accept it.
+func TestNilNodeAccessors(t *testing.T) {
+	var n *Node
+	if b, ok := n.Bytes(); ok || b != nil {
+		t.Error("Bytes on nil node")
+	}
+	if _, ok := n.AttrString("x"); ok {
+		t.Error("AttrString on nil node")
+	}
+	if _, ok := n.AttrJID("x"); ok {
+		t.Error("AttrJID on nil node")
+	}
+	if _, ok := n.AttrInt("x"); ok {
+		t.Error("AttrInt on nil node")
+	}
+	if n.Children() != nil || n.HasChild("x") || n.ChildrenByTag("x") != nil {
+		t.Error("child accessors on nil node")
+	}
+}

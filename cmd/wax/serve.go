@@ -17,31 +17,46 @@ import (
 	"github.com/mdenesfe/wax/internal/store"
 )
 
+// serveOptions are the non-secret settings of `wax serve`, given as flags.
+// Secrets (WAX_API_KEY, WAX_MASTER_KEY, WAX_DATABASE_URL) come only from
+// the environment, so they never appear in shell history or `ps` output.
+type serveOptions struct {
+	listen               string
+	version              string
+	checkVersion         bool
+	allowPrivateWebhooks bool
+	nodeID               string
+	advertise            string
+	maxInstances         int
+}
+
 // serveCommand runs the multi-instance API server.
 func serveCommand(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	versionFlag := fs.String("version", "", "WhatsApp Web version (default: detect live, then built-in)")
+	var o serveOptions
+	var level slog.Level
+	fs.StringVar(&o.listen, "listen", "127.0.0.1:8080", "API listen address")
+	fs.TextVar(&level, "log-level", slog.LevelInfo, "log level: debug, info, warn or error")
+	fs.StringVar(&o.version, "version", "", "WhatsApp Web version (default: detect live, then built-in)")
 	noVersionCheck := fs.Bool("no-version-check", false, "do not query web.whatsapp.com for the current version")
+	fs.BoolVar(&o.allowPrivateWebhooks, "allow-private-webhooks", false,
+		"allow webhook URLs on loopback/private networks (a receiver on this host or LAN)")
+	fs.StringVar(&o.nodeID, "node-id", "", "this node's id when several nodes share the database (default: hostname + random)")
+	fs.StringVar(&o.advertise, "advertise", "", "URL where the other nodes reach this node's API (default: http://<listen>)")
+	fs.IntVar(&o.maxInstances, "max-instances", 0, "most instances this node runs (0: no limit)")
 	_ = fs.Parse(args)
+	o.checkVersion = !*noVersionCheck
 
-	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel(os.Getenv("WAX_LOG_LEVEL"))}))
+	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := serve(ctx, log, *versionFlag, !*noVersionCheck); err != nil && !errors.Is(err, context.Canceled) {
+	if err := serve(ctx, log, o); err != nil && !errors.Is(err, context.Canceled) {
 		log.Error("exiting", "error", err)
 		os.Exit(1)
 	}
 }
 
-func logLevel(s string) slog.Level {
-	var l slog.Level
-	if err := l.UnmarshalText([]byte(s)); err != nil {
-		return slog.LevelInfo
-	}
-	return l
-}
-
-func serve(ctx context.Context, log *slog.Logger, versionFlag string, checkVersion bool) error {
+func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 	apiKey := os.Getenv("WAX_API_KEY")
 	if len(apiKey) < 32 {
 		return errors.New("WAX_API_KEY must be set to at least 32 characters (e.g. openssl rand -hex 32)")
@@ -52,22 +67,22 @@ func serve(ctx context.Context, log *slog.Logger, versionFlag string, checkVersi
 	}
 	defer st.Close()
 
-	version, err := resolveVersion(ctx, log, versionFlag, checkVersion)
+	version, err := resolveVersion(ctx, log, o.version, o.checkVersion)
 	if err != nil {
 		return err
 	}
-	m := manager.New(manager.Config{Store: st, Log: log, Version: version, CheckVersion: checkVersion})
+	if o.advertise == "" {
+		o.advertise = "http://" + o.listen
+	}
+	m := manager.New(manager.Config{Store: st, Log: log, Version: version, CheckVersion: o.checkVersion,
+		AllowPrivateWebhooks: o.allowPrivateWebhooks, NodeID: o.nodeID, Address: o.advertise, MaxInstances: o.maxInstances})
 	if err := m.Start(ctx); err != nil {
 		return err
 	}
 	defer m.Stop()
 
-	addr := os.Getenv("WAX_LISTEN")
-	if addr == "" {
-		addr = "127.0.0.1:8080"
-	}
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              o.listen,
 		Handler:           api.New(m, st, apiKey, log),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute, // large media uploads
@@ -76,15 +91,21 @@ func serve(ctx context.Context, log *slog.Logger, versionFlag string, checkVersi
 	}
 	errCh := make(chan error, 1)
 	go func() { errCh <- srv.ListenAndServe() }()
-	log.Info("api listening", "addr", addr)
+	log.Info("api listening", "addr", o.listen)
 	select {
 	case err := <-errCh:
 		return fmt.Errorf("http server: %w", err)
 	case <-ctx.Done():
 	}
+	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("http shutdown: %w", err)
+	}
+	m.Stop() // idempotent; the deferred call is then a no-op
+	log.Info("stopped")
+	return nil
 }
 
 // openStore opens the database using the environment configuration.

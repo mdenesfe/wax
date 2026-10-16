@@ -45,7 +45,8 @@ func NewGCM(key []byte) (cipher.AEAD, error) {
 }
 
 // CBCEncrypt encrypts with AES-CBC and PKCS#7 padding. key must be 16, 24
-// or 32 bytes and iv 16 bytes.
+// or 32 bytes and iv 16 bytes. The result has spare capacity for a
+// SHA-256 MAC, so appending one does not copy the ciphertext.
 func CBCEncrypt(key, iv, plaintext []byte) ([]byte, error) {
 	if len(iv) != aes.BlockSize {
 		return nil, fmt.Errorf("cryptoutil: iv is %d bytes", len(iv))
@@ -55,7 +56,7 @@ func CBCEncrypt(key, iv, plaintext []byte) ([]byte, error) {
 		return nil, err
 	}
 	pad := aes.BlockSize - len(plaintext)%aes.BlockSize
-	out := make([]byte, len(plaintext)+pad)
+	out := make([]byte, len(plaintext)+pad, len(plaintext)+pad+sha256.Size)
 	copy(out, plaintext)
 	for i := len(plaintext); i < len(out); i++ {
 		out[i] = byte(pad)

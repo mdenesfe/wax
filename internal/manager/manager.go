@@ -1,6 +1,11 @@
-// Package manager runs many WhatsApp instances in one process. Each
-// instance has its own client, send queue (outbox) and webhook delivery,
-// isolated from the others: a panic or failure in one never affects another.
+// Package manager runs WhatsApp instances. Each instance has its own
+// client, send queue (outbox) and webhook delivery, isolated from the
+// others: a panic or failure in one never affects another.
+//
+// Several nodes (processes) can share one database. Each instance runs on
+// exactly one node, which holds a lease on it (see lease.go); nodes take
+// over the instances of a node that stops or fails, and spread instances
+// evenly between them.
 package manager
 
 import (
@@ -11,7 +16,6 @@ import (
 	"net/http"
 	"regexp"
 	"runtime/debug"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,6 +23,7 @@ import (
 	"github.com/mdenesfe/wax/internal/backoff"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/transport"
+	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
 )
 
@@ -26,8 +31,9 @@ import (
 var (
 	ErrNotFound     = errors.New("manager: instance not found")
 	ErrExists       = errors.New("manager: instance already exists")
-	ErrInvalidID    = errors.New("manager: instance id must be 1-64 characters of a-z, 0-9, '-' or '_'")
+	ErrInvalidID    = errors.New("manager: ids must be 1-64 characters of a-z, 0-9, '-' or '_'")
 	ErrNotConnected = errors.New("manager: instance is not connected")
+	ErrNotRunning   = errors.New("manager: instance is not running on any node")
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
@@ -45,15 +51,30 @@ type Config struct {
 	Verifier  *transport.CertVerifier
 	// WebhookHTTP overrides the webhook HTTP client (tests).
 	WebhookHTTP *http.Client
+	// AllowPrivateWebhooks permits webhook URLs that resolve to loopback or
+	// private addresses (a receiver on the same host or LAN). Off by
+	// default to prevent server-side request forgery.
+	AllowPrivateWebhooks bool
 	// Timing overrides retry and polling delays; zero fields use
 	// DefaultTiming (tests use millisecond values).
 	Timing Timing
+
+	// NodeID identifies this node among those sharing the database
+	// (default: random). Address is where the other nodes reach this node's
+	// API, to forward requests for instances it runs.
+	NodeID  string
+	Address string
+	// MaxInstances caps the instances this node runs (0: no cap).
+	MaxInstances int
 }
 
 // Timing holds the delays of the outbox and webhook loops.
 type Timing struct {
 	WebhookRetry backoff.Policy // failed webhook deliveries
 	OutboxRetry  backoff.Policy // failed sends and queue read errors
+	// LeaseTTL is how long an instance stays with a node that stopped
+	// renewing; it bounds failover time. Leases renew every LeaseTTL/3.
+	LeaseTTL time.Duration
 	// Idle is how long an idle loop sleeps before re-checking its queue.
 	// New work wakes it immediately, so this is only a safety net.
 	Idle time.Duration
@@ -64,6 +85,7 @@ var DefaultTiming = Timing{
 	WebhookRetry: backoff.Policy{Min: 5 * time.Second, Max: 4 * time.Hour},
 	OutboxRetry:  backoff.Policy{Min: 5 * time.Second, Max: 30 * time.Minute},
 	Idle:         time.Minute,
+	LeaseTTL:     30 * time.Second,
 }
 
 // withDefaults fills zero fields from DefaultTiming.
@@ -77,6 +99,9 @@ func (t Timing) withDefaults() Timing {
 	if t.Idle == 0 {
 		t.Idle = DefaultTiming.Idle
 	}
+	if t.LeaseTTL == 0 {
+		t.LeaseTTL = DefaultTiming.LeaseTTL
+	}
 	return t
 }
 
@@ -89,8 +114,12 @@ type Manager struct {
 	version  atomic.Value // waversion.Version
 
 	mu        sync.Mutex
-	instances map[string]*Instance
+	instances map[string]*Instance // running on this node, by internal id
 	ctx       context.Context
+
+	publish  chan struct{}      // an instance's state changed: publish it soon
+	stopped  chan struct{}      // closed when the lease loop has ended
+	stopLoop context.CancelFunc // ends the lease loop (nil before Start)
 }
 
 // New creates a Manager. Call Start to run the stored instances.
@@ -102,9 +131,13 @@ func New(cfg Config) *Manager {
 		cfg.Version = waversion.Default
 	}
 	cfg.Timing = cfg.Timing.withDefaults()
-	m := &Manager{cfg: cfg, store: cfg.Store, log: cfg.Log, hookHTTP: cfg.WebhookHTTP, instances: map[string]*Instance{}}
+	m := &Manager{cfg: cfg, store: cfg.Store, log: cfg.Log, hookHTTP: cfg.WebhookHTTP, instances: map[string]*Instance{},
+		publish: make(chan struct{}, 1), stopped: make(chan struct{})}
+	if m.cfg.NodeID == "" {
+		m.cfg.NodeID = randomNodeID()
+	}
 	if m.hookHTTP == nil {
-		m.hookHTTP = newWebhookClient()
+		m.hookHTTP = newWebhookClient(cfg.AllowPrivateWebhooks)
 	}
 	m.version.Store(cfg.Version)
 	return m
@@ -113,22 +146,23 @@ func New(cfg Config) *Manager {
 // Version returns the WhatsApp Web version used for new connections.
 func (m *Manager) Version() waversion.Version { return m.version.Load().(waversion.Version) }
 
-// Start runs every stored instance plus the maintenance loops. It returns
-// once they are launched; they stop when ctx ends (see Stop).
+// Start joins the cluster: it takes leases on instances (all of them when
+// it is the only node) and keeps doing so in the background until ctx
+// ends. It returns once the first round has run.
 func (m *Manager) Start(ctx context.Context) error {
-	list, err := m.store.ListInstances(ctx)
-	if err != nil {
-		return err
-	}
 	m.mu.Lock()
 	m.ctx = ctx
-	for _, cfg := range list {
-		in := newInstance(m, cfg)
-		m.instances[cfg.ID] = in
-		in.start(ctx)
-	}
 	m.mu.Unlock()
-	m.log.Info("manager started", "instances", len(list), "version", m.Version().String())
+	l := newLeaser(m)
+	if err := l.tick(ctx); err != nil {
+		return err
+	}
+	m.log.Info("manager started", "node", m.cfg.NodeID, "instances", m.runningCount(), "version", m.Version().String())
+	lctx, cancel := context.WithCancel(ctx)
+	m.mu.Lock()
+	m.stopLoop = cancel
+	m.mu.Unlock()
+	go l.loop(lctx)
 	if m.cfg.CheckVersion {
 		go m.watchVersion(ctx)
 	}
@@ -136,14 +170,45 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops all instances and waits for them.
+// Stop stops this node's instances, releases their leases so other nodes
+// take them over at once, and leaves the cluster.
 func (m *Manager) Stop() {
+	// End the lease loop first, so it cannot start instances meanwhile.
+	m.mu.Lock()
+	stopLoop := m.stopLoop
+	m.stopLoop = nil
+	m.mu.Unlock()
+	if stopLoop == nil {
+		return // not started, or already stopped
+	}
+	stopLoop()
+	<-m.stopped
 	m.mu.Lock()
 	list := make([]*Instance, 0, len(m.instances))
 	for _, in := range m.instances {
 		list = append(list, in)
 	}
+	m.instances = map[string]*Instance{}
 	m.mu.Unlock()
+	stopAll(list)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ids := make([]string, len(list))
+	for i, in := range list {
+		ids[i] = in.ID
+	}
+	if len(ids) > 0 {
+		if err := m.store.ReleaseLeases(ctx, m.cfg.NodeID, ids); err != nil {
+			m.log.Warn("could not release leases; they expire on their own", "error", err)
+		}
+	}
+	if err := m.store.DeleteNode(ctx, m.cfg.NodeID); err != nil {
+		m.log.Warn("could not leave the cluster", "error", err)
+	}
+}
+
+// stopAll stops instances in parallel and waits for them.
+func stopAll(list []*Instance) {
 	var wg sync.WaitGroup
 	for _, in := range list {
 		wg.Add(1)
@@ -155,29 +220,49 @@ func (m *Manager) Stop() {
 	wg.Wait()
 }
 
-// Create registers and starts a new instance.
+// InternalID is the internal key of a new instance. Ids match idPattern,
+// which excludes ':', so the result is unambiguous.
+func InternalID(tenant, name string) string { return tenant + ":" + name }
+
+// Create registers a new instance named cfg.Name for tenant cfg.TenantID
+// (cfg.ID is assigned here) and starts it on this node when it can take
+// the lease; otherwise another node picks it up.
 func (m *Manager) Create(ctx context.Context, cfg store.Instance) (*Instance, error) {
-	if !idPattern.MatchString(cfg.ID) {
+	if !idPattern.MatchString(cfg.Name) || !idPattern.MatchString(cfg.TenantID) {
 		return nil, ErrInvalidID
 	}
+	cfg.ID = InternalID(cfg.TenantID, cfg.Name)
 	if err := m.store.CreateInstance(ctx, &cfg); err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			return nil, ErrExists
 		}
 		return nil, err
 	}
+	ids, err := m.store.AcquireLeases(ctx, m.cfg.NodeID, m.cfg.Address, m.cfg.Timing.LeaseTTL, 1, cfg.ID)
+	if err != nil || len(ids) == 0 {
+		return newInstance(m, cfg), nil // runs wherever the next lease round puts it
+	}
+	return m.run(cfg)
+}
+
+// run starts an instance whose lease this node holds.
+func (m *Manager) run(cfg store.Instance) (*Instance, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.ctx == nil {
 		return nil, errors.New("manager: not started")
 	}
+	if in, ok := m.instances[cfg.ID]; ok {
+		return in, nil
+	}
 	in := newInstance(m, cfg)
+	in.running = true
 	m.instances[cfg.ID] = in
 	in.start(m.ctx)
 	return in, nil
 }
 
-// Get returns an instance.
+// Get returns an instance running on this node.
 func (m *Manager) Get(id string) (*Instance, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -188,24 +273,79 @@ func (m *Manager) Get(id string) (*Instance, error) {
 	return in, nil
 }
 
-// List returns all instances sorted by id.
-func (m *Manager) List() []*Instance {
-	m.mu.Lock()
-	out := make([]*Instance, 0, len(m.instances))
-	for _, in := range m.instances {
-		out = append(out, in)
+// Resolve returns a tenant's instance by name: the running one when this
+// node owns it, otherwise a detached one (configuration only; Running is
+// false). Instances of other tenants are not found, so their existence is
+// not revealed.
+func (m *Manager) Resolve(ctx context.Context, tenant, name string) (*Instance, error) {
+	cfg, err := m.store.InstanceByName(ctx, tenant, name)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, ErrNotFound
 	}
-	m.mu.Unlock()
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	if err != nil {
+		return nil, err
+	}
+	if in, err := m.Get(cfg.ID); err == nil {
+		return in, nil
+	}
+	return newInstance(m, *cfg), nil
+}
+
+// Owner returns the node running an instance (ErrNotFound if none).
+func (m *Manager) Owner(ctx context.Context, in *Instance) (*store.Lease, error) {
+	l, err := m.store.LeaseOwner(ctx, in.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	return l, err
+}
+
+// NodeID returns this node's id.
+func (m *Manager) NodeID() string { return m.cfg.NodeID }
+
+// View is an instance as shown through the API.
+type View struct {
+	Name          string
+	Status        Status
+	JID, LID      wabin.JID
+	WebhookURL    string
+	RatePerMinute int
+	QRPending     bool
+}
+
+// Views lists a tenant's instances (only the one named name, if not "")
+// across the cluster: state comes from this node for instances it runs and
+// from the owners' published state otherwise.
+func (m *Manager) Views(ctx context.Context, tenant, name string) ([]View, error) {
+	rows, err := m.store.InstanceViews(ctx, tenant, name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]View, len(rows))
+	for i, r := range rows {
+		v := View{Name: r.Name, Status: Status(r.Status), WebhookURL: r.WebhookURL, RatePerMinute: r.RatePerMinute, QRPending: r.QRPending}
+		if v.Status == "" {
+			v.Status = StatusUnassigned
+		}
+		v.JID, _ = wabin.ParseJID(r.JID)
+		v.LID, _ = wabin.ParseJID(r.LID)
+		if in, err := m.Get(r.ID); err == nil { // live state is authoritative
+			v.Status, v.QRPending = in.Status(), in.QR() != ""
+		}
+		v.JID, v.LID = v.JID.ToNonAD(), v.LID.ToNonAD()
+		out[i] = v
+	}
+	return out, nil
+}
+
+func (m *Manager) runningCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.instances)
 }
 
 // Update changes an instance's webhook and rate settings.
-func (m *Manager) Update(ctx context.Context, cfg store.Instance) error {
-	in, err := m.Get(cfg.ID)
-	if err != nil {
-		return err
-	}
+func (m *Manager) Update(ctx context.Context, in *Instance, cfg store.Instance) error {
 	if err := m.store.UpdateInstance(ctx, &cfg); err != nil {
 		return err
 	}
@@ -215,13 +355,10 @@ func (m *Manager) Update(ctx context.Context, cfg store.Instance) error {
 	return nil
 }
 
-// Delete unlinks the device (best effort), stops the instance and removes
-// all of its data.
-func (m *Manager) Delete(ctx context.Context, id string) error {
-	in, err := m.Get(id)
-	if err != nil {
-		return err
-	}
+// Delete unlinks the device (best effort, when it runs here), stops the
+// instance and removes all of its data. Requests for an instance running
+// on another node are forwarded there by the API first.
+func (m *Manager) Delete(ctx context.Context, in *Instance) error {
 	if cl := in.client(); cl != nil && cl.IsLoggedIn() {
 		lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		if err := cl.Logout(lctx); err != nil {
@@ -229,21 +366,21 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 		}
 		cancel()
 	}
-	in.stop()
-	m.mu.Lock()
-	delete(m.instances, id)
-	m.mu.Unlock()
-	return m.store.DeleteInstance(ctx, id)
+	if in.running {
+		in.stop()
+		m.mu.Lock()
+		delete(m.instances, in.ID)
+		m.mu.Unlock()
+	}
+	return m.store.DeleteInstance(ctx, in.ID)
 }
 
-// Connect asks a waiting instance (QR timeout, replaced) to run again.
-func (m *Manager) Connect(id string) error {
-	in, err := m.Get(id)
-	if err != nil {
-		return err
+// Connect asks an instance waiting here (QR timeout, replaced) to run
+// again. An instance no node runs is picked up by the next lease round.
+func (m *Manager) Connect(in *Instance) {
+	if in.running {
+		kick(in.connect)
 	}
-	kick(in.connect)
-	return nil
 }
 
 // recoverLoop logs a panic in an instance background loop; the loop's
@@ -280,16 +417,16 @@ func (m *Manager) maintenance(ctx context.Context) {
 	}
 }
 
-// Enqueue queues an outgoing message for an instance and wakes its worker.
-func (m *Manager) Enqueue(ctx context.Context, it *store.OutboxItem) (bool, error) {
-	in, err := m.Get(it.Instance)
-	if err != nil {
-		return false, err
-	}
+// Enqueue queues an outgoing message and wakes the instance's worker if
+// it runs here (the API forwards sends to the owner node).
+func (m *Manager) Enqueue(ctx context.Context, in *Instance, it *store.OutboxItem) (bool, error) {
+	it.Instance = in.ID
 	created, err := m.store.Enqueue(ctx, it)
 	if err != nil {
 		return false, fmt.Errorf("enqueue: %w", err)
 	}
-	kick(in.outboxKick)
+	if in.running {
+		kick(in.outboxKick)
+	}
 	return created, nil
 }

@@ -7,14 +7,14 @@ import (
 
 // Errors returned by the encoder and decoder.
 var (
-	ErrInvalidType   = errors.New("binary: unsupported value type")
-	ErrInvalidToken  = errors.New("binary: invalid token")
-	ErrInvalidNode   = errors.New("binary: invalid node")
-	ErrInvalidJID    = errors.New("binary: invalid jid")
-	ErrNonStringKey  = errors.New("binary: non-string attribute key")
-	ErrTooDeep       = errors.New("binary: node nesting too deep")
-	ErrTrailingBytes = errors.New("binary: trailing bytes after node")
-	ErrTooLarge      = errors.New("binary: value too large")
+	ErrInvalidType   = errors.New("wabin: unsupported value type")
+	ErrInvalidToken  = errors.New("wabin: invalid token")
+	ErrInvalidNode   = errors.New("wabin: invalid node")
+	ErrInvalidJID    = errors.New("wabin: invalid jid")
+	ErrNonStringKey  = errors.New("wabin: non-string attribute key")
+	ErrTooDeep       = errors.New("wabin: node nesting too deep")
+	ErrTrailingBytes = errors.New("wabin: trailing bytes after node")
+	ErrTooLarge      = errors.New("wabin: value too large")
 )
 
 // Attrs holds node attributes. Decoded values are string or JID. When
@@ -44,14 +44,29 @@ type Node struct {
 	Content any
 }
 
-// Children returns the child nodes, or nil if the content is not a node
-// list. Like Child, ChildrenByTag and HasChild it accepts a nil node, so
-// lookups can be chained without nil checks.
-func (n *Node) Children() []Node {
+// All read accessors (Children, Child, ChildrenByTag, HasChild, Bytes and
+// the Attr* methods) accept a nil node, which has no attributes and no
+// content, so a missing child (`c, _ := n.Child(...)`) can be read without
+// a nil check.
+
+func (n *Node) content() any {
 	if n == nil {
 		return nil
 	}
-	c, _ := n.Content.([]Node)
+	return n.Content
+}
+
+func (n *Node) attr(key string) any {
+	if n == nil {
+		return nil
+	}
+	return n.Attrs[key]
+}
+
+// Children returns the child nodes, or nil if the content is not a node
+// list.
+func (n *Node) Children() []Node {
+	c, _ := n.content().([]Node)
 	return c
 }
 
@@ -86,7 +101,7 @@ func (n *Node) ChildrenByTag(tag string) []Node {
 // Bytes returns the content as bytes. String content is converted, because
 // the server may tokenize short binary-looking values.
 func (n *Node) Bytes() ([]byte, bool) {
-	switch c := n.Content.(type) {
+	switch c := n.content().(type) {
 	case []byte:
 		return c, true
 	case string:
@@ -98,7 +113,7 @@ func (n *Node) Bytes() ([]byte, bool) {
 // AttrString returns the attribute as a string. JID values are rendered with
 // JID.String. The bool is false if the attribute is absent.
 func (n *Node) AttrString(key string) (string, bool) {
-	switch v := n.Attrs[key].(type) {
+	switch v := n.attr(key).(type) {
 	case string:
 		return v, true
 	case JID:
@@ -112,7 +127,7 @@ func (n *Node) AttrString(key string) (string, bool) {
 
 // AttrJID returns the attribute as a JID, parsing it if it was sent as a string.
 func (n *Node) AttrJID(key string) (JID, bool) {
-	switch v := n.Attrs[key].(type) {
+	switch v := n.attr(key).(type) {
 	case JID:
 		return v, true
 	case string:

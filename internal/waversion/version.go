@@ -151,7 +151,8 @@ func Watch(ctx context.Context, log *slog.Logger, client *http.Client, interval 
 			}
 		}
 	}
-	check()
+	// No check at start: callers resolve the version when they start, and an
+	// immediate second fetch only reports rollout noise.
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {

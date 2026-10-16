@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/mdenesfe/wax/internal/signal"
@@ -15,40 +14,8 @@ import (
 // "devices" notification. The server's phash check catches staleness too.
 const deviceCacheTTL = 10 * time.Minute
 
-type deviceCache struct {
-	mu      sync.Mutex
-	entries map[wabin.JID]deviceEntry
-}
-
-type deviceEntry struct {
-	devices []wabin.JID
-	fetched time.Time
-}
-
-func (d *deviceCache) get(user wabin.JID) ([]wabin.JID, bool) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	e, ok := d.entries[user]
-	if !ok || time.Since(e.fetched) > deviceCacheTTL {
-		return nil, false
-	}
-	return e.devices, true
-}
-
-func (d *deviceCache) put(user wabin.JID, devices []wabin.JID) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.entries == nil {
-		d.entries = make(map[wabin.JID]deviceEntry)
-	}
-	d.entries[user] = deviceEntry{devices: devices, fetched: time.Now()}
-}
-
-func (d *deviceCache) invalidate(user wabin.JID) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.entries, user.ToNonAD())
-}
+// deviceCache maps a user (non-AD JID) to its device list.
+type deviceCache = ttlCache[wabin.JID, []wabin.JID]
 
 // usync runs a user sync query and returns the <list> of <user> results.
 func (s *session) usync(ctx context.Context, users []wabin.JID, mode, purpose string, query []wabin.Node) (*wabin.Node, error) {
@@ -186,8 +153,12 @@ func (c *Client) learnLID(ctx context.Context, pn, lid wabin.JID) {
 	if pn.Server != wabin.ServerUser || lid.Server != wabin.ServerLID || pn.User == "" || lid.User == "" {
 		return
 	}
+	if c.lidSeen.unchanged(pn.User, lid.User) {
+		return // stored already; most messages repeat a known mapping
+	}
 	changed, err := c.cfg.Store.PutLIDMapping(ctx, c.cfg.InstanceID, pn.User, lid.User)
 	if err != nil {
+		c.lidSeen.forget(pn.User)
 		c.log.Warn("failed to store LID mapping", "error", err)
 		return
 	}

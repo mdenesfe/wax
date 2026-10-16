@@ -61,7 +61,7 @@ func TestParseMasterKey(t *testing.T) {
 
 // openTestStore connects to WAX_TEST_DATABASE_URL or skips. Each test uses a
 // unique instance id, so tests can share the database and run in parallel.
-func openTestStore(t *testing.T) *Store {
+func openTestStore(t testing.TB) *Store {
 	t.Helper()
 	dsn := os.Getenv("WAX_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -234,5 +234,49 @@ func TestPreKeys(t *testing.T) {
 	}
 	if _, err := s.GetPreKey(ctx, id, 3); !errors.Is(err, ErrNotFound) {
 		t.Fatal("removed prekey still present")
+	}
+}
+
+func TestAPIKeys(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	tenant := testInstance(t)
+	if err := s.CreateTenant(ctx, &Tenant{ID: tenant}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteTenant(ctx, tenant) })
+	token, key, err := s.CreateAPIKey(ctx, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.VerifyAPIKey(ctx, token); err != nil || got != tenant {
+		t.Fatalf("verify: %q %v", got, err)
+	}
+	// Only an HMAC is stored: the secret never appears in the row.
+	var mac []byte
+	if err := s.db.QueryRow(ctx, `SELECT mac FROM wax_api_keys WHERE id = $1`, key.ID).Scan(&mac); err != nil {
+		t.Fatal(err)
+	}
+	secret := token[len(token)-43:]
+	if bytes.Contains([]byte(token), mac) || bytes.Contains(mac, []byte(secret)) {
+		t.Fatal("secret stored in the database")
+	}
+	// The secret is bound to its key id: another id with the same secret fails.
+	other, _, err := s.CreateAPIKey(ctx, tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped := other[:len("wax_")+16] + "_" + secret
+	if _, err := s.VerifyAPIKey(ctx, swapped); !errors.Is(err, ErrInvalidAPIKey) {
+		t.Fatalf("secret accepted under another key id: %v", err)
+	}
+	if _, _, err := s.CreateAPIKey(ctx, "no-such-tenant"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("key for unknown tenant: %v", err)
+	}
+	if err := s.DeleteAPIKey(ctx, tenant, key.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.VerifyAPIKey(ctx, token); !errors.Is(err, ErrInvalidAPIKey) {
+		t.Fatalf("revoked key accepted: %v", err)
 	}
 }

@@ -32,12 +32,12 @@ func Unpack(frame []byte) ([]byte, error) {
 	}
 	zr, err := zlib.NewReader(bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("binary: open zlib stream: %w", err)
+		return nil, fmt.Errorf("wabin: open zlib stream: %w", err)
 	}
 	defer zr.Close()
 	out, err := io.ReadAll(io.LimitReader(zr, MaxDecompressedSize+1))
 	if err != nil {
-		return nil, fmt.Errorf("binary: inflate frame: %w", err)
+		return nil, fmt.Errorf("wabin: inflate frame: %w", err)
 	}
 	if len(out) > MaxDecompressedSize {
 		return nil, fmt.Errorf("%w: decompressed frame exceeds %d bytes", ErrTooLarge, MaxDecompressedSize)
@@ -49,7 +49,8 @@ func Unpack(frame []byte) ([]byte, error) {
 // Unpack). All byte slices in the result are copies, so data may be reused.
 func Unmarshal(data []byte) (*Node, error) {
 	d := decoder{data: data}
-	n, err := d.readNode(0)
+	n := &Node{}
+	err := d.readNode(n, 0)
 	if err != nil {
 		return nil, fmt.Errorf("%w (at offset %d)", err, d.pos)
 	}
@@ -60,7 +61,7 @@ func Unmarshal(data []byte) (*Node, error) {
 }
 
 // errShort is wrapped into every out-of-bounds read.
-var errShort = errors.New("binary: unexpected end of data")
+var errShort = errors.New("wabin: unexpected end of data")
 
 type decoder struct {
 	data []byte
@@ -119,30 +120,32 @@ func (d *decoder) listSize(tag byte) (int, error) {
 	return 0, fmt.Errorf("%w: expected list tag, got %d", ErrInvalidToken, tag)
 }
 
-func (d *decoder) readNode(depth int) (*Node, error) {
+// readNode decodes one node into n (in place, so lists of nodes need no
+// per-node allocation).
+func (d *decoder) readNode(n *Node, depth int) error {
 	if depth > maxDepth {
-		return nil, ErrTooDeep
+		return ErrTooDeep
 	}
 	tag, err := d.byte1()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	size, err := d.listSize(tag)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if size == 0 {
-		return nil, fmt.Errorf("%w: empty node list", ErrInvalidNode)
+		return fmt.Errorf("%w: empty node list", ErrInvalidNode)
 	}
 	desc, err := d.readValue(true, depth)
 	if err != nil {
-		return nil, fmt.Errorf("node tag: %w", err)
+		return fmt.Errorf("node tag: %w", err)
 	}
 	tagStr, ok := desc.(string)
 	if !ok || tagStr == "" {
-		return nil, fmt.Errorf("%w: tag is %T", ErrInvalidNode, desc)
+		return fmt.Errorf("%w: tag is %T", ErrInvalidNode, desc)
 	}
-	n := &Node{Tag: tagStr}
+	n.Tag = tagStr
 
 	// List layout: tag, then key/value pairs, then optional content.
 	if attrCount := (size - 1) / 2; attrCount > 0 {
@@ -150,15 +153,15 @@ func (d *decoder) readNode(depth int) (*Node, error) {
 		for range attrCount {
 			k, err := d.readValue(true, depth)
 			if err != nil {
-				return nil, fmt.Errorf("attribute key in <%s>: %w", tagStr, err)
+				return fmt.Errorf("attribute key in <%s>: %w", tagStr, err)
 			}
 			key, ok := k.(string)
 			if !ok {
-				return nil, fmt.Errorf("%w in <%s>: %T", ErrNonStringKey, tagStr, k)
+				return fmt.Errorf("%w in <%s>: %T", ErrNonStringKey, tagStr, k)
 			}
 			v, err := d.readValue(true, depth)
 			if err != nil {
-				return nil, fmt.Errorf("attribute %q in <%s>: %w", key, tagStr, err)
+				return fmt.Errorf("attribute %q in <%s>: %w", key, tagStr, err)
 			}
 			n.Attrs[key] = v
 		}
@@ -166,15 +169,20 @@ func (d *decoder) readNode(depth int) (*Node, error) {
 	if size%2 == 0 {
 		n.Content, err = d.readValue(false, depth)
 		if err != nil {
-			return nil, fmt.Errorf("content of <%s>: %w", tagStr, err)
+			return fmt.Errorf("content of <%s>: %w", tagStr, err)
 		}
 	}
-	return n, nil
+	return nil
 }
 
 // readValue reads any value. asString controls whether binary blobs are
 // returned as string (attribute keys/values, JID parts) or []byte (content).
 func (d *decoder) readValue(asString bool, depth int) (any, error) {
+	// JIDs nest values too, so the depth limit is enforced here and not only
+	// per node; otherwise a chain of JID tags recurses without bound.
+	if depth > maxDepth {
+		return nil, ErrTooDeep
+	}
 	tag, err := d.byte1()
 	if err != nil {
 		return nil, err
@@ -200,7 +208,7 @@ func (d *decoder) readValue(asString bool, depth int) (any, error) {
 		return d.readPacked(unpackHex)
 	}
 	if int(tag) < len(singleByteTokens) && tag != 0 {
-		return singleByteTokens[tag], nil
+		return singleByteValues[tag], nil
 	}
 	return nil, fmt.Errorf("%w: tag %d", ErrInvalidToken, tag)
 }
@@ -216,11 +224,9 @@ func (d *decoder) readList(tag byte, depth int) ([]Node, error) {
 	}
 	nodes := make([]Node, size)
 	for i := range nodes {
-		n, err := d.readNode(depth + 1)
-		if err != nil {
+		if err := d.readNode(&nodes[i], depth+1); err != nil {
 			return nil, err
 		}
-		nodes[i] = *n
 	}
 	return nodes, nil
 }
@@ -250,25 +256,25 @@ func (d *decoder) readBinary(tag byte, asString bool) (any, error) {
 	return b, nil
 }
 
-func (d *decoder) readDictionary(tag byte) (string, error) {
+func (d *decoder) readDictionary(tag byte) (any, error) {
 	idx, err := d.byte1()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	dict := doubleByteTokens[tag-tagDictionary0]
+	dict := doubleByteValues[tag-tagDictionary0]
 	if int(idx) >= len(dict) {
-		return "", fmt.Errorf("%w: dictionary %d index %d", ErrInvalidToken, tag-tagDictionary0, idx)
+		return nil, fmt.Errorf("%w: dictionary %d index %d", ErrInvalidToken, tag-tagDictionary0, idx)
 	}
 	return dict[idx], nil
 }
 
 // readJIDPair reads user@server; the user part may be absent (nil).
 func (d *decoder) readJIDPair(depth int) (JID, error) {
-	user, err := d.readValue(true, depth)
+	user, err := d.readValue(true, depth+1)
 	if err != nil {
 		return JID{}, err
 	}
-	server, err := d.readValue(true, depth)
+	server, err := d.readValue(true, depth+1)
 	if err != nil {
 		return JID{}, err
 	}
@@ -291,7 +297,7 @@ func (d *decoder) readADJID(depth int) (JID, error) {
 	if err != nil {
 		return JID{}, err
 	}
-	user, err := d.readString(depth)
+	user, err := d.readString(depth + 1)
 	if err != nil {
 		return JID{}, err
 	}
@@ -303,7 +309,7 @@ func (d *decoder) readADJID(depth int) (JID, error) {
 func (d *decoder) readDeviceJID(interop bool, depth int) (JID, error) {
 	var j JID
 	var err error
-	if j.User, err = d.readString(depth); err != nil {
+	if j.User, err = d.readString(depth + 1); err != nil {
 		return JID{}, err
 	}
 	device, err := d.uintN(2)
@@ -318,7 +324,7 @@ func (d *decoder) readDeviceJID(interop bool, depth int) (JID, error) {
 		}
 		j.Integrator = uint16(integrator)
 	}
-	if j.Server, err = d.readString(depth); err != nil {
+	if j.Server, err = d.readString(depth + 1); err != nil {
 		return JID{}, err
 	}
 	return j, nil

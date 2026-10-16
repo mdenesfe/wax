@@ -104,7 +104,7 @@ func (t *Transfer) Upload(ctx context.Context, c *Conn, enc *Encrypted, typ Type
 	req.Header.Set("Referer", Origin+"/")
 	resp, err := t.client().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("media: upload: %w", err)
+		return nil, fmt.Errorf("media: upload: %w", withoutURL(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -176,7 +176,7 @@ func (t *Transfer) get(ctx context.Context, u string) ([]byte, error) {
 	req.Header.Set("Referer", Origin+"/")
 	resp, err := t.client().Do(req)
 	if err != nil {
-		return nil, err
+		return nil, withoutURL(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -194,4 +194,15 @@ func (t *Transfer) get(ctx context.Context, u string) ([]byte, error) {
 		return nil, fmt.Errorf("media: file exceeds %d bytes", max)
 	}
 	return data, nil
+}
+
+// withoutURL drops the request URL from an HTTP client error: upload URLs
+// carry the media_conn auth token, and errors end up in logs, the outbox
+// API and webhooks. The underlying error (e.g. a net.Error) is kept.
+func withoutURL(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s request: %w", ue.Op, ue.Err)
+	}
+	return err
 }

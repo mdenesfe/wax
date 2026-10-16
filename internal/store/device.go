@@ -165,56 +165,74 @@ func (s *Store) LoadDevice(ctx context.Context, instanceID string) (*Device, err
 		return nil, fmt.Errorf("store: load device %q: %w", instanceID, err)
 	}
 
-	noise, err := s.sealer.open(noiseEnc, adFor(devTable, "noise_key", instanceID))
-	if err != nil {
-		return nil, err
-	}
-	if d.NoiseKey, err = keys.KeyPairFromPrivate(noise); err != nil {
-		return nil, err
-	}
-	seed, err := s.sealer.open(seedEnc, adFor(devTable, "identity_seed", instanceID))
-	if err != nil {
-		return nil, err
-	}
-	if d.IdentityKey, err = keys.SigningKeyFromSeed(seed); err != nil {
-		return nil, err
-	}
-	spk, err := s.sealer.open(spkEnc, adFor(devTable, "signed_prekey", instanceID))
-	if err != nil {
-		return nil, err
-	}
-	spkPair, err := keys.KeyPairFromPrivate(spk)
-	if err != nil {
+	if err := s.openDeviceKeys(d, noiseEnc, seedEnc, spkEnc, advEnc); err != nil {
 		return nil, err
 	}
 	if len(spkSig) != 64 {
 		return nil, fmt.Errorf("store: device %q: signed prekey signature is %d bytes", instanceID, len(spkSig))
 	}
-	d.SignedPreKey = SignedPreKey{ID: uint32(spkID), Key: spkPair, Signature: [64]byte(spkSig)}
-	adv, err := s.sealer.open(advEnc, adFor(devTable, "adv_secret", instanceID))
-	if err != nil {
-		return nil, err
-	}
-	if len(adv) != 32 {
-		return nil, fmt.Errorf("store: device %q: adv secret is %d bytes", instanceID, len(adv))
-	}
-	d.AdvSecret = [32]byte(adv)
+	d.SignedPreKey.ID, d.SignedPreKey.Signature = uint32(spkID), [64]byte(spkSig)
 	d.RegistrationID = uint32(regID)
 	d.Account = acc
 	if pairedAt != nil {
 		d.PairedAt = *pairedAt
 	}
-	if jid != nil {
-		if d.JID, err = wabin.ParseJID(*jid); err != nil {
-			return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
-		}
+	if d.JID, err = parseNullableJID(jid); err != nil {
+		return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
 	}
-	if lid != nil {
-		if d.LID, err = wabin.ParseJID(*lid); err != nil {
-			return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
-		}
+	if d.LID, err = parseNullableJID(lid); err != nil {
+		return nil, fmt.Errorf("store: device %q: %w", instanceID, err)
 	}
 	return d, nil
+}
+
+// openDeviceKeys decrypts the sealed key columns of a device.
+func (s *Store) openDeviceKeys(d *Device, noiseEnc, seedEnc, spkEnc, advEnc []byte) error {
+	open := func(blob []byte, column string) ([]byte, error) {
+		return s.sealer.open(blob, adFor(devTable, column, d.InstanceID))
+	}
+	noise, err := open(noiseEnc, "noise_key")
+	if err == nil {
+		d.NoiseKey, err = keys.KeyPairFromPrivate(noise)
+	}
+	if err != nil {
+		return err
+	}
+	seed, err := open(seedEnc, "identity_seed")
+	if err == nil {
+		d.IdentityKey, err = keys.SigningKeyFromSeed(seed)
+	}
+	if err == nil {
+		// The identity key lives as long as the device; parse it for DH once.
+		err = d.IdentityKey.PrepareDH()
+	}
+	if err != nil {
+		return err
+	}
+	spk, err := open(spkEnc, "signed_prekey")
+	if err == nil {
+		d.SignedPreKey.Key, err = keys.KeyPairFromPrivate(spk)
+	}
+	if err != nil {
+		return err
+	}
+	adv, err := open(advEnc, "adv_secret")
+	if err != nil {
+		return err
+	}
+	if len(adv) != 32 {
+		return fmt.Errorf("store: device %q: adv secret is %d bytes", d.InstanceID, len(adv))
+	}
+	d.AdvSecret = [32]byte(adv)
+	return nil
+}
+
+// parseNullableJID parses an optional JID column.
+func parseNullableJID(s *string) (wabin.JID, error) {
+	if s == nil {
+		return wabin.JID{}, nil
+	}
+	return wabin.ParseJID(*s)
 }
 
 func nullableJID(j wabin.JID) *string {
@@ -238,17 +256,26 @@ func (s *Store) PutIdentity(ctx context.Context, instanceID, address string, key
 
 // GetIdentity returns the stored identity key of a remote device.
 func (s *Store) GetIdentity(ctx context.Context, instanceID, address string) ([32]byte, error) {
-	var b []byte
-	err := s.db.QueryRow(ctx, `SELECT identity_key FROM wax_identities WHERE instance_id = $1 AND address = $2`,
-		instanceID, address).Scan(&b)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return [32]byte{}, ErrNotFound
+	return queryRow(ctx, s, s.identityQuery(instanceID, address))
+}
+
+func (s *Store) identityQuery(instanceID, address string) rowQuery[[32]byte] {
+	return rowQuery[[32]byte]{
+		sql:  `SELECT identity_key FROM wax_identities WHERE instance_id = $1 AND address = $2`,
+		args: []any{instanceID, address},
+		scan: func(row pgx.Row) ([32]byte, error) {
+			var b []byte
+			err := row.Scan(&b)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return [32]byte{}, ErrNotFound
+			}
+			if err != nil {
+				return [32]byte{}, fmt.Errorf("store: get identity: %w", err)
+			}
+			if len(b) != 32 {
+				return [32]byte{}, fmt.Errorf("store: identity for %s is %d bytes", address, len(b))
+			}
+			return [32]byte(b), nil
+		},
 	}
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("store: get identity: %w", err)
-	}
-	if len(b) != 32 {
-		return [32]byte{}, fmt.Errorf("store: identity for %s is %d bytes", address, len(b))
-	}
-	return [32]byte(b), nil
 }

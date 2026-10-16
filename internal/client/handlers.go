@@ -277,7 +277,7 @@ func (s *session) handleNotification(n *wabin.Node) {
 		s.onAccountSync(n)
 	case typ == "devices":
 		// A user added or removed a device: drop the cached list.
-		s.c.devCache.invalidate(from)
+		s.c.devCache.invalidate(from.ToNonAD())
 		s.ack(n)
 	case typ == "encrypt" && from == wabin.ServerJID && n.HasChild("count"):
 		s.onPreKeyCount(n)
@@ -346,7 +346,7 @@ func (s *session) onIdentityChange(n *wabin.Node, from wabin.JID) {
 		s.log.Warn("failed to drop sessions after identity change", "error", err)
 		return // unacked: retried on redelivery
 	}
-	s.c.devCache.invalidate(from)
+	s.c.devCache.invalidate(from.ToNonAD())
 	s.c.emit(IdentityChanged{JID: from})
 	s.ack(n)
 }

@@ -53,17 +53,84 @@ internal/testutil    fake WhatsApp server for end-to-end tests
 
 ```bash
 docker compose up -d                      # PostgreSQL on 127.0.0.1:5433
-cp .env.example .env                      # then set WAX_MASTER_KEY=$(openssl rand -base64 32)
+cp .env.example .env                      # fill in the secrets (see below)
 set -a; source .env; set +a
-WAX_API_KEY=$(openssl rand -hex 24) go run ./cmd/wax serve
+go run ./cmd/wax serve -listen 127.0.0.1:8080 -log-level info
 ```
 
-Environment: `WAX_DATABASE_URL`, `WAX_MASTER_KEY`, `WAX_API_KEY` (at least 32
-characters), `WAX_LISTEN` (default `127.0.0.1:8080`), `WAX_LOG_LEVEL`
-(`debug|info|warn|error`). Logs are JSON on stderr; SIGINT/SIGTERM shut down
-gracefully.
+The environment carries secrets only, and `.env` holds nothing else:
 
-Every `/v1` request needs `Authorization: Bearer $WAX_API_KEY`.
+| Variable | Secret |
+|---|---|
+| `WAX_MASTER_KEY` | encrypts all keys and sessions at rest; `openssl rand -base64 32`. Losing it means re-pairing every instance |
+| `WAX_API_KEY` | bearer token for the API, at least 32 characters; `openssl rand -hex 32` |
+| `WAX_DATABASE_URL` | PostgreSQL DSN (contains the password) |
+| `WAX_TEST_DATABASE_URL` | DSN of the separate test database (tests only) |
+
+Everything else is a flag of `wax serve`: `-listen` (default
+`127.0.0.1:8080`), `-log-level` (`debug|info|warn|error`), `-version`,
+`-no-version-check`, and `-allow-private-webhooks` (webhook receivers on this
+host or a private network; refused by default to prevent SSRF). Logs are
+JSON on stderr; SIGINT/SIGTERM shut down gracefully.
+
+### Running several nodes
+
+Any number of `wax serve` processes can share one database; each instance
+runs on exactly one of them:
+
+```bash
+wax serve -listen 10.0.0.1:8080 -node-id n1    # -advertise defaults to http://<listen>
+wax serve -listen 10.0.0.2:8080 -node-id n2
+```
+
+- **Leases.** A node owns an instance through a lease in the database and
+  renews it every 10 s (leases last 30 s; all times are database time, so
+  node clocks do not matter). Free leases are claimed every 2 s.
+- **Failover.** A node that shuts down releases its leases; another node
+  takes the instances over in about 2 s and reconnects without a QR code.
+  After a crash the takeover waits until the lease expires (at most 30 s),
+  never sooner, so an account never runs on two nodes. A node that cannot
+  reach the database stops its instances one round before its leases could
+  expire.
+- **Balancing.** Each node runs a fair share (instances ÷ live nodes,
+  rounded up, at most `-max-instances`); a joining node takes over the
+  surplus of the others.
+- **Routing.** Requests may reach any node. A request for an instance that
+  runs elsewhere is forwarded once to its owner (`-advertise` must be
+  reachable by the other nodes; keep that network private or put TLS in
+  front). Listings are answered from the database by any node.
+- **Limit.** A node that freezes for longer than a lease (for example a
+  suspended VM) and then resumes may briefly overlap with the new owner;
+  WhatsApp then disconnects one of the two ("replaced"), and that instance
+  waits for `POST /v1/instances/{id}/connect`.
+
+### Tenants and keys
+
+The API is multi-tenant. Every request carries `Authorization: Bearer <key>`:
+
+- **Admin key** (`WAX_API_KEY`): manages tenants and their keys only. It
+  cannot read or control any instance.
+- **Tenant key**: manages that tenant's instances only. Another tenant's
+  instance answers `404`, so even its existence is hidden. Instance names
+  are unique per tenant (two tenants can both have `main`).
+
+Tenant keys look like `wax_<id>_<secret>`. They are shown once, when
+issued; the database keeps only an HMAC of the secret (keyed from
+`WAX_MASTER_KEY`), and every request is checked against it, so a revoked key
+stops working immediately.
+
+| Method & path (admin key) | Purpose |
+|---|---|
+| `POST /v1/tenants` | create `{id, name}` |
+| `GET /v1/tenants` | list tenants |
+| `DELETE /v1/tenants/{tenant}` | delete (only once it has no instances) |
+| `POST /v1/tenants/{tenant}/keys` | issue a key; the response is the only place it appears |
+| `GET /v1/tenants/{tenant}/keys` | list key ids |
+| `DELETE /v1/tenants/{tenant}/keys/{key}` | revoke a key |
+
+Instances created before tenants existed belong to the tenant `default`.
+
+All routes below use a tenant key.
 
 | Method & path | Purpose |
 |---|---|

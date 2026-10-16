@@ -31,19 +31,26 @@ const packedMax = 127
 var (
 	singleByteIndex = make(map[string]byte, len(singleByteTokens))
 	doubleByteIndex = make(map[string][2]byte, 4*256)
+	// The token tables pre-boxed as interface values: the decoder returns
+	// tokens as any, and boxing a string allocates every time.
+	singleByteValues [len(singleByteTokens)]any
+	doubleByteValues [len(doubleByteTokens)][]any
 )
 
 func init() {
 	if len(singleByteTokens) > tagDictionary0 {
-		panic("binary: single byte token table overlaps structural tags")
+		panic("wabin: single byte token table overlaps structural tags")
 	}
 	for i, tok := range singleByteTokens {
+		singleByteValues[i] = tok
 		if i != 0 {
 			singleByteIndex[tok] = byte(i)
 		}
 	}
 	for d, dict := range doubleByteTokens {
+		doubleByteValues[d] = make([]any, len(dict))
 		for i, tok := range dict {
+			doubleByteValues[d][i] = tok
 			doubleByteIndex[tok] = [2]byte{byte(d), byte(i)}
 		}
 	}

@@ -19,23 +19,29 @@ const sessTable = "wax_sessions"
 // none exists. Inside a transaction the row is locked (FOR UPDATE) until
 // commit, so concurrent decrypt/encrypt on the same session serialize.
 func (s *Store) LoadSession(ctx context.Context, instanceID, address string) (*signal.Record, error) {
+	return queryRow(ctx, s, s.sessionQuery(instanceID, address))
+}
+
+func (s *Store) sessionQuery(instanceID, address string) rowQuery[*signal.Record] {
 	q := `SELECT record FROM wax_sessions WHERE instance_id = $1 AND address = $2`
 	if s.inTx {
 		q += ` FOR UPDATE`
 	}
-	var enc []byte
-	err := s.db.QueryRow(ctx, q, instanceID, address).Scan(&enc)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return &signal.Record{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: load session %s: %w", address, err)
-	}
-	raw, err := s.sealer.open(enc, adFor(sessTable, "record", instanceID, address))
-	if err != nil {
-		return nil, err
-	}
-	return signal.UnmarshalRecord(raw)
+	return rowQuery[*signal.Record]{sql: q, args: []any{instanceID, address}, scan: func(row pgx.Row) (*signal.Record, error) {
+		var enc []byte
+		err := row.Scan(&enc)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &signal.Record{}, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("store: load session %s: %w", address, err)
+		}
+		raw, err := s.sealer.open(enc, adFor(sessTable, "record", instanceID, address))
+		if err != nil {
+			return nil, err
+		}
+		return signal.UnmarshalRecord(raw)
+	}}
 }
 
 // PutSession stores a Signal record.
@@ -223,22 +229,66 @@ type BufferedEvent struct {
 
 // GetBufferedEvent looks up a ciphertext hash. It returns nil if unseen.
 func (s *Store) GetBufferedEvent(ctx context.Context, instanceID string, hash []byte) (*BufferedEvent, error) {
-	var enc []byte
-	var ev BufferedEvent
-	err := s.db.QueryRow(ctx, `SELECT plaintext, inserted_at FROM wax_event_buffer WHERE instance_id = $1 AND hash = $2`,
-		instanceID, hash).Scan(&enc, &ev.Inserted)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+	return queryRow(ctx, s, s.bufferedEventQuery(instanceID, hash))
+}
+
+func (s *Store) bufferedEventQuery(instanceID string, hash []byte) rowQuery[*BufferedEvent] {
+	return rowQuery[*BufferedEvent]{
+		sql:  `SELECT plaintext, inserted_at FROM wax_event_buffer WHERE instance_id = $1 AND hash = $2`,
+		args: []any{instanceID, hash},
+		scan: func(row pgx.Row) (*BufferedEvent, error) {
+			var enc []byte
+			var ev BufferedEvent
+			err := row.Scan(&enc, &ev.Inserted)
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, fmt.Errorf("store: get buffered event: %w", err)
+			}
+			if enc != nil {
+				if ev.Plaintext, err = s.sealer.open(enc, adFor(bufTable, "plaintext", instanceID, fmt.Sprintf("%x", hash))); err != nil {
+					return nil, err
+				}
+			}
+			return &ev, nil
+		},
 	}
-	if err != nil {
-		return nil, fmt.Errorf("store: get buffered event: %w", err)
+}
+
+// DecryptState is what decrypting one message needs from the database.
+type DecryptState struct {
+	Buffered *BufferedEvent // nil if this ciphertext was never seen
+	Session  *signal.Record // empty record if there is none
+	Identity *[32]byte      // nil if the peer's identity is unknown
+}
+
+// LoadDecryptState reads the buffered event, session and stored identity
+// for one incoming message in a single round trip. Inside a transaction
+// the session row is locked (FOR UPDATE), as with LoadSession.
+func (s *Store) LoadDecryptState(ctx context.Context, instanceID, address string, hash []byte) (*DecryptState, error) {
+	bq, sq, iq := s.bufferedEventQuery(instanceID, hash), s.sessionQuery(instanceID, address), s.identityQuery(instanceID, address)
+	var b pgx.Batch
+	b.Queue(bq.sql, bq.args...)
+	b.Queue(sq.sql, sq.args...)
+	b.Queue(iq.sql, iq.args...)
+	br := s.db.SendBatch(ctx, &b)
+	defer br.Close()
+	var st DecryptState
+	var err error
+	if st.Buffered, err = bq.scan(br.QueryRow()); err != nil {
+		return nil, err
 	}
-	if enc != nil {
-		if ev.Plaintext, err = s.sealer.open(enc, adFor(bufTable, "plaintext", instanceID, fmt.Sprintf("%x", hash))); err != nil {
-			return nil, err
-		}
+	if st.Session, err = sq.scan(br.QueryRow()); err != nil {
+		return nil, err
 	}
-	return &ev, nil
+	switch id, err := iq.scan(br.QueryRow()); {
+	case err == nil:
+		st.Identity = &id
+	case !errors.Is(err, ErrNotFound):
+		return nil, err
+	}
+	return &st, br.Close()
 }
 
 // PutBufferedEvent stores a decrypted payload under its ciphertext hash.

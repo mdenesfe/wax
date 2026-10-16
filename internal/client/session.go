@@ -32,9 +32,6 @@ func (e *IQError) Error() string { return fmt.Sprintf("iq error %s: %s", e.Code,
 const (
 	connectTimeout   = 30 * time.Second
 	defaultIQTimeout = 30 * time.Second
-	// handlerQueueSize decouples reading from handling. Handlers may block on
-	// IQ round trips while the reader keeps delivering their responses.
-	handlerQueueSize = 2048
 )
 
 // sessionResult describes how a connection ended.
@@ -59,7 +56,7 @@ type session struct {
 	waitersMu sync.Mutex
 	waiters   map[string]chan *wabin.Node
 
-	queue chan *wabin.Node
+	queue *nodeQueue // reader -> handler; never blocks the reader
 	wg    sync.WaitGroup
 
 	endOnce sync.Once
@@ -94,7 +91,7 @@ func (c *Client) runSession(ctx context.Context, dev *store.Device) sessionResul
 		c: c, dev: dev, conn: conn, ctx: sctx, cancel: cancel,
 		log:     c.log.With("paired", dev.IsPaired()),
 		waiters: make(map[string]chan *wabin.Node),
-		queue:   make(chan *wabin.Node, handlerQueueSize),
+		queue:   newNodeQueue(),
 	}
 	s.log.Info("connected", "jid", wabin.MaskJID(dev.JID))
 	if dev.PushName != "" {
@@ -175,23 +172,18 @@ func (s *session) readLoop() {
 		if s.deliverResponse(n) {
 			continue
 		}
-		select {
-		case s.queue <- n:
-		case <-s.ctx.Done():
-			return
-		}
+		s.queue.push(n)
 	}
 }
 
 // handleLoop processes non-response nodes in arrival order.
 func (s *session) handleLoop() {
 	for {
-		select {
-		case <-s.ctx.Done():
+		n, ok := s.queue.pop(s.ctx)
+		if !ok {
 			return
-		case n := <-s.queue:
-			s.handleSafely(n)
 		}
+		s.handleSafely(n)
 	}
 }
 

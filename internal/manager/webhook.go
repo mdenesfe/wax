@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/mdenesfe/wax/internal/cryptoutil"
@@ -27,12 +30,49 @@ func Sign(secret, body []byte) string {
 
 // webhookClient does not follow redirects: a webhook must answer at the
 // configured URL.
-func newWebhookClient() *http.Client {
+func newWebhookClient(allowPrivate bool) *http.Client {
+	dialer := &net.Dialer{Timeout: webhookTimeout}
+	if !allowPrivate {
+		// Checked on the resolved address at connect time, so DNS answers
+		// (including rebinding) cannot reach internal services.
+		dialer.Control = func(_, address string, _ syscall.RawConn) error {
+			return checkWebhookAddr(address)
+		}
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil // a proxy would bypass the address check
+	transport.DialContext = dialer.DialContext
 	return &http.Client{
 		Timeout:       webhookTimeout,
+		Transport:     transport,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
+
+// ErrWebhookAddress rejects webhook targets on internal networks.
+var ErrWebhookAddress = errors.New("webhook address is not public")
+
+// checkWebhookAddr rejects loopback, private, link-local (including cloud
+// metadata at 169.254.169.254), multicast and unspecified addresses.
+func checkWebhookAddr(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrWebhookAddress, host)
+	}
+	ip = ip.Unmap()
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() || cgnat.Contains(ip) {
+		return fmt.Errorf("%w: %s", ErrWebhookAddress, ip)
+	}
+	return nil
+}
+
+// cgnat is the shared address space (RFC 6598), not covered by IsPrivate.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
 // deliveryLoop delivers this instance's queued webhooks in order.
 func (in *Instance) deliveryLoop(ctx context.Context) {
@@ -81,7 +121,7 @@ func (in *Instance) deliverOne(ctx context.Context) (time.Duration, error) {
 	req.Header.Set("User-Agent", "wax-webhook/1")
 	req.Header.Set("X-Wax-Event", it.Event)
 	req.Header.Set("X-Wax-Delivery", strconv.FormatInt(it.ID, 10))
-	req.Header.Set("X-Wax-Instance", in.ID)
+	req.Header.Set("X-Wax-Instance", in.Name)
 	if len(cfg.WebhookSecret) > 0 {
 		req.Header.Set("X-Wax-Signature", Sign(cfg.WebhookSecret, it.Payload))
 	}

@@ -76,16 +76,12 @@ func (r *Record) ProcessBundle(local LocalIdentity, b *PreKeyBundle) error {
 //	master = 0xFF*32 || DH(IKa, SPKb) || DH(EKa, IKb) || DH(EKa, SPKb) [|| DH(EKa, OPKb)]
 func initAlice(ourIdentity, ourBase *keys.KeyPair, theirIdentity, theirSignedPreKey, theirRatchet [32]byte, theirOneTime *[32]byte, sending *keys.KeyPair) (*sessionState, error) {
 	secret := append([]byte{}, discontinuity...)
-	pairs := []struct{ priv, pub [32]byte }{
-		{ourIdentity.Priv, theirSignedPreKey},
-		{ourBase.Priv, theirIdentity},
-		{ourBase.Priv, theirSignedPreKey},
-	}
+	pairs := []dhPair{{ourIdentity, theirSignedPreKey}, {ourBase, theirIdentity}, {ourBase, theirSignedPreKey}}
 	if theirOneTime != nil {
-		pairs = append(pairs, struct{ priv, pub [32]byte }{ourBase.Priv, *theirOneTime})
+		pairs = append(pairs, dhPair{ourBase, *theirOneTime})
 	}
 	for _, p := range pairs {
-		s, err := keys.DH(p.priv, p.pub)
+		s, err := p.ours.DH(p.theirs)
 		if err != nil {
 			return nil, fmt.Errorf("%w: x3dh: %w", ErrInvalidMessage, err)
 		}
@@ -109,21 +105,23 @@ func initAlice(ourIdentity, ourBase *keys.KeyPair, theirIdentity, theirSignedPre
 	return st, nil
 }
 
+// dhPair is one X3DH agreement: our key pair with their public key.
+type dhPair struct {
+	ours   *keys.KeyPair
+	theirs [32]byte
+}
+
 // initBob derives the responder's session.
 //
 //	master = 0xFF*32 || DH(SPKb, IKa) || DH(IKb, EKa) || DH(SPKb, EKa) [|| DH(OPKb, EKa)]
 func initBob(ourIdentity, ourSignedPreKey, ourRatchet, ourOneTime *keys.KeyPair, theirIdentity, theirBase [32]byte) (*sessionState, error) {
 	secret := append([]byte{}, discontinuity...)
-	pairs := []struct{ priv, pub [32]byte }{
-		{ourSignedPreKey.Priv, theirIdentity},
-		{ourIdentity.Priv, theirBase},
-		{ourSignedPreKey.Priv, theirBase},
-	}
+	pairs := []dhPair{{ourSignedPreKey, theirIdentity}, {ourIdentity, theirBase}, {ourSignedPreKey, theirBase}}
 	if ourOneTime != nil {
-		pairs = append(pairs, struct{ priv, pub [32]byte }{ourOneTime.Priv, theirBase})
+		pairs = append(pairs, dhPair{ourOneTime, theirBase})
 	}
 	for _, p := range pairs {
-		s, err := keys.DH(p.priv, p.pub)
+		s, err := p.ours.DH(p.theirs)
 		if err != nil {
 			return nil, fmt.Errorf("%w: x3dh: %w", ErrInvalidMessage, err)
 		}

@@ -85,6 +85,10 @@ func TestSigningKeyConsistency(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Independent check: X25519 scalar multiplication of the private key.
+		if ref, err := KeyPairFromPrivate(sk.Priv[:]); err != nil || ref.Pub != sk.Pub {
+			t.Fatalf("edwards->montgomery public key differs from scalar multiplication")
+		}
 		edPub := sk.ed.Public().(ed25519.PublicKey)
 		conv, ok := montgomeryToEdwards(sk.Pub, edPub[31]>>7)
 		if !ok || !bytes.Equal(conv, edPub) {
