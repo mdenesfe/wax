@@ -305,7 +305,7 @@ function table(columns, rows, onRow, empty) {
 }
 
 const STATUS = {
-  connected: ["ok", "Connected"], qr: ["warn", "Waiting for QR"], connecting: ["warn", "Connecting"], starting: ["warn", "Starting"],
+  connected: ["ok", "Connected"], qr: ["warn", "Waiting for QR"], qr_timeout: ["warn", "QR expired"], connecting: ["warn", "Connecting"], starting: ["warn", "Starting"],
   logged_out: ["bad", "Logged out"], replaced: ["bad", "Replaced"], outdated: ["bad", "Outdated"], banned: ["bad", "Banned"],
   failed: ["bad", "Failed"], stopped: ["", "Stopped"], unassigned: ["", "Unassigned"],
 };
@@ -1205,7 +1205,7 @@ function bubble(base, chat, m, ctx, first) {
     m.forwarded ? h("div", { class: "wa-fwd" }, icon("share"), m.forwarding_score >= 5 ? "Forwarded many times" : "Forwarded") : null,
     m.quoted ? quoteBlock(m.quoted, quoteWho(m.quoted), () => ctx.jump(m.quoted.id)) : null,
     media, body,
-    h("span", { class: "wa-time num" }, clock(m.timestamp), tick));
+    h("span", { class: "wa-time num" }, m.edited ? h("span", { class: "edited" }, "Edited") : null, clock(m.timestamp), tick));
   if (!group || m.from_me) return el;
   return h("div", { class: "wa-row" }, first ? avatar(senderLabel(m), m.sender, base, "sm") : h("span", { class: "avatar-gap" }), el);
 }
@@ -1514,7 +1514,7 @@ function statusView(base, me) {
     else stage.append(h("span", {}, m.text));
     main.replaceChildren(h("div", { class: "viewer" },
       h("div", { class: "segments" }, group.items.map((_, i) => h("span", { class: i < index ? "done" : i === index ? (kind === "video" ? "done" : "run") : "" }))),
-      h("div", { class: "viewer-head" }, avatar(group.name, group.jid, base),
+      h("div", { class: "bar viewer-head" }, avatar(group.name, group.jid, base),
         h("div", { class: "ident" }, h("div", { class: "wa-name" }, group.name), h("div", { class: "small" }, shortTime(m.timestamp))),
         button("", { class: "ghost icon", icon: "close", title: "Close", onclick: close })),
       h("div", { class: "viewer-body" },

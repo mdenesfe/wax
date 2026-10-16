@@ -392,10 +392,13 @@ func (m *Manager) Update(ctx context.Context, in *Instance, cfg store.Instance) 
 // instance and removes all of its data. Requests for an instance running
 // on another node are forwarded there by the API first.
 func (m *Manager) Delete(ctx context.Context, in *Instance) error {
+	unlinked := false
 	if cl := in.client(); cl != nil && cl.IsLoggedIn() {
 		lctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		if err := cl.Logout(lctx); err != nil {
 			in.log.Warn("logout before delete failed", "error", err)
+		} else {
+			unlinked = true
 		}
 		cancel()
 	}
@@ -405,7 +408,12 @@ func (m *Manager) Delete(ctx context.Context, in *Instance) error {
 		delete(m.instances, in.ID)
 		m.mu.Unlock()
 	}
-	return m.store.DeleteInstance(ctx, in.ID)
+	if err := m.store.DeleteInstance(ctx, in.ID); err != nil {
+		return err
+	}
+	// Deleting is irreversible: always leave a trace.
+	in.log.Info("instance deleted", "unlinked", unlinked)
+	return nil
 }
 
 // Connect asks an instance waiting here (QR timeout, replaced) to run

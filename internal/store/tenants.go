@@ -28,6 +28,7 @@ type Tenant struct {
 
 // TenantAuth is what a verified key yields: the tenant and its API rate.
 type TenantAuth struct {
+	KeyID             string // the key's public id, for logs
 	TenantID          string
 	RequestsPerSecond int
 }
@@ -187,7 +188,7 @@ func (s *Store) VerifyAPIKey(ctx context.Context, token string) (TenantAuth, err
 	if !ok || !ok2 || err != nil || len(secret) != 32 || len(id) != 16 {
 		return TenantAuth{}, ErrInvalidAPIKey
 	}
-	var a TenantAuth
+	a := TenantAuth{KeyID: id}
 	var mac []byte
 	err = s.db.QueryRow(ctx, `SELECT k.tenant_id, k.mac, t.requests_per_second
 		FROM wax_api_keys k JOIN wax_tenants t ON t.id = k.tenant_id WHERE k.id = $1`, id).Scan(&a.TenantID, &mac, &a.RequestsPerSecond)

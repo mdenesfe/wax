@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -167,6 +168,9 @@ type ChatUpdate struct {
 	Archived      *bool
 	Pinned        *bool
 	MutedUntil    *time.Time // zero time = not muted
+	// FromHistory marks values from history sync: they do not override
+	// archive, pin and mute set by app state, which is newer.
+	FromHistory bool
 }
 
 // UpdateChat upserts a chat with the given fields.
@@ -176,17 +180,20 @@ func (s *Store) UpdateChat(ctx context.Context, instanceID, jid string, u ChatUp
 	if setMuted && !u.MutedUntil.IsZero() {
 		muted = *u.MutedUntil
 	}
-	_, err := s.db.Exec(ctx, `INSERT INTO wax_chats (instance_id, jid, name, last_message_at, unread_count, archived, pinned, muted_until)
-		VALUES ($1, $2, COALESCE($3, ''), $4, COALESCE($5, 0), COALESCE($6, false), COALESCE($7, false), $8)
+	// $10: from history; $11: app state sets a setting now.
+	settings := !u.FromHistory && (u.Archived != nil || u.Pinned != nil || setMuted)
+	_, err := s.db.Exec(ctx, `INSERT INTO wax_chats (instance_id, jid, name, last_message_at, unread_count, archived, pinned, muted_until, settings_at)
+		VALUES ($1, $2, COALESCE($3, ''), $4, COALESCE($5, 0), COALESCE($6, false), COALESCE($7, false), $8, CASE WHEN $11 THEN now() END)
 		ON CONFLICT (instance_id, jid) DO UPDATE SET
 			name            = COALESCE($3, wax_chats.name),
 			last_message_at = GREATEST(wax_chats.last_message_at, $4),
 			unread_count    = COALESCE($5, wax_chats.unread_count),
-			archived        = COALESCE($6, wax_chats.archived),
-			pinned          = COALESCE($7, wax_chats.pinned),
-			muted_until     = CASE WHEN $9 THEN $8 ELSE wax_chats.muted_until END,
+			archived        = CASE WHEN $10 AND wax_chats.settings_at IS NOT NULL THEN wax_chats.archived ELSE COALESCE($6, wax_chats.archived) END,
+			pinned          = CASE WHEN $10 AND wax_chats.settings_at IS NOT NULL THEN wax_chats.pinned ELSE COALESCE($7, wax_chats.pinned) END,
+			muted_until     = CASE WHEN $9 AND NOT ($10 AND wax_chats.settings_at IS NOT NULL) THEN $8 ELSE wax_chats.muted_until END,
+			settings_at     = CASE WHEN $11 THEN now() ELSE wax_chats.settings_at END,
 			updated_at      = now()`,
-		instanceID, jid, u.Name, u.LastMessageAt, u.UnreadCount, u.Archived, u.Pinned, muted, setMuted)
+		instanceID, jid, u.Name, u.LastMessageAt, u.UnreadCount, u.Archived, u.Pinned, muted, setMuted, u.FromHistory, settings)
 	if err != nil {
 		return fmt.Errorf("store: update chat: %w", err)
 	}
@@ -205,6 +212,7 @@ type StoredMessage struct {
 	PushName, Type   string
 	Content          []byte // serialized wae2e.Message; for "stub:<n>" types, the JSON array of the stub parameters
 	Source           string
+	EditedAt         *time.Time // set when the sender edited the message
 }
 
 // PutMessage stores a message; an existing row (same chat and id) is kept.
@@ -222,11 +230,59 @@ func (s *Store) PutMessage(ctx context.Context, instanceID string, m *StoredMess
 	return nil
 }
 
+// RevokedType is the type of a message its sender deleted: the system
+// message "revoke" (stub type 1), as history sync delivers it.
+const RevokedType = "stub:1"
+
+// ChangeMessage applies a sender's change to a stored message of chat
+// (under either address of a contact): a revoke when content is nil (the
+// message becomes RevokedType, its content dropped), otherwise an edit of
+// a text message (new content, edited_at set). Only the message's sender
+// may change it: our own messages when fromMe, others when sender (any
+// device) is the same user. It reports whether a message was changed.
+func (s *Store) ChangeMessage(ctx context.Context, instanceID, chat, id, sender string, fromMe bool, content []byte, at time.Time) (bool, error) {
+	var realChat, msgSender, typ string
+	var msgFromMe bool
+	err := s.db.QueryRow(ctx, aliasCTE+`SELECT chat, sender, from_me, type FROM wax_messages
+		WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) AND message_id = $3 LIMIT 1`, instanceID, chat, id).
+		Scan(&realChat, &msgSender, &msgFromMe, &typ)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: change message: %w", err)
+	}
+	if fromMe != msgFromMe || (!fromMe && jidUser(msgSender) != jidUser(sender)) {
+		return false, nil
+	}
+	if content == nil {
+		_, err = s.db.Exec(ctx, `UPDATE wax_messages SET type = $4, content = NULL, edited_at = NULL
+			WHERE instance_id = $1 AND chat = $2 AND message_id = $3`, instanceID, realChat, id, RevokedType)
+	} else if typ == "text" {
+		_, err = s.db.Exec(ctx, `UPDATE wax_messages SET content = $4, edited_at = $5
+			WHERE instance_id = $1 AND chat = $2 AND message_id = $3`,
+			instanceID, realChat, id, s.sealer.seal(content, adFor(msgTable, "content", instanceID, realChat, id)), at)
+	} else {
+		return false, nil // edits of media captions are not applied
+	}
+	if err != nil {
+		return false, fmt.Errorf("store: change message: %w", err)
+	}
+	return true, nil
+}
+
+// jidUser is the user part of a JID string ("1234:5@lid" -> "1234").
+func jidUser(jid string) string {
+	user, _, _ := strings.Cut(jid, "@")
+	user, _, _ = strings.Cut(user, ":")
+	return user
+}
+
 // Messages lists a chat's messages, newest first, before the given time;
 // types, if given, keeps only those message types (e.g. "image").
 func (s *Store) Messages(ctx context.Context, instanceID, chat string, before time.Time, limit int, types ...string) ([]StoredMessage, error) {
 	rows, err := s.db.Query(ctx, aliasCTE+`
-		SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
+		SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source, edited_at
 		FROM wax_messages WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) AND sent_at < $3
 			AND (COALESCE(cardinality($5::text[]), 0) = 0 OR type = ANY($5))
 		ORDER BY sent_at DESC LIMIT $4`,
@@ -239,7 +295,7 @@ func (s *Store) Messages(ctx context.Context, instanceID, chat string, before ti
 	for rows.Next() {
 		var m StoredMessage
 		var enc []byte
-		if err := rows.Scan(&m.Chat, &m.ID, &m.Sender, &m.FromMe, &m.SentAt, &m.PushName, &m.Type, &enc, &m.Source); err != nil {
+		if err := rows.Scan(&m.Chat, &m.ID, &m.Sender, &m.FromMe, &m.SentAt, &m.PushName, &m.Type, &enc, &m.Source, &m.EditedAt); err != nil {
 			return nil, err
 		}
 		if enc != nil {

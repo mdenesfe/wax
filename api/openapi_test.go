@@ -116,6 +116,21 @@ func TestOpenAPIContract(t *testing.T) {
 		}
 	}
 
+	// Instance states.
+	var states []string
+	if st, ok := s.Comp.Schemas["Instance"].Properties["status"].(map[string]any); ok {
+		for _, v := range st["enum"].([]any) {
+			states = append(states, v.(string))
+		}
+	}
+	var code []string
+	for _, st := range manager.Statuses {
+		code = append(code, string(st))
+	}
+	if slices.Sort(states); !slices.Equal(states, slices.Sorted(slices.Values(code))) {
+		t.Errorf("documented instance states %v, code has %v", states, code)
+	}
+
 	// Webhook events.
 	if got, want := slices.Sorted(maps.Keys(s.Hooks)), slices.Sorted(slices.Values(manager.WebhookEvents)); !slices.Equal(got, want) {
 		t.Errorf("documented webhooks %v, code emits %v", got, want)

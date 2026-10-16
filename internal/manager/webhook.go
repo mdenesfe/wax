@@ -19,7 +19,11 @@ import (
 
 // Webhook delivery policy.
 const (
-	webhookMaxAttempts = 12               // ~1 day with DefaultTiming
+	// A failing delivery is retried for webhookGiveUp after the event was
+	// queued (backoff delays are random, so a count alone would not say
+	// how long); webhookMaxAttempts is only a safety net.
+	webhookGiveUp      = 24 * time.Hour
+	webhookMaxAttempts = 50
 	webhookTimeout     = 15 * time.Second // per attempt
 )
 
@@ -140,7 +144,7 @@ func (in *Instance) deliverOne(ctx context.Context) (time.Duration, error) {
 	if ctx.Err() != nil {
 		return 0, ctx.Err()
 	}
-	if it.Attempts+1 >= webhookMaxAttempts {
+	if it.Attempts+1 >= webhookMaxAttempts || time.Since(it.Created) >= webhookGiveUp {
 		in.m.met.hooks.Inc(in.TenantID, in.Name, "dead")
 		in.log.Error("webhook delivery given up", "delivery", it.ID, "event", it.Event, "error", err)
 		return 0, st.MarkWebhook(ctx, it.ID, "dead", time.Now(), err.Error())

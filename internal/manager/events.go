@@ -49,6 +49,7 @@ type MessageJSON struct {
 	Forwarded       bool         `json:"forwarded,omitempty"`
 	ForwardingScore uint32       `json:"forwarding_score,omitempty"` // how often it was forwarded; WhatsApp says "many times" from 5
 	ViewOnce        bool         `json:"view_once,omitempty"`
+	Edited          bool         `json:"edited,omitempty"` // the sender edited the text (message listings)
 	Stub            *StubJSON    `json:"stub,omitempty"`
 	Raw             any          `json:"raw,omitempty"` // protojson of the message
 	Source          string       `json:"source,omitempty"`

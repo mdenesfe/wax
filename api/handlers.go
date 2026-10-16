@@ -572,6 +572,7 @@ func messageJSON(instance string, m *store.StoredMessage) manager.MessageJSON {
 	// The stored type is kept (it names voice notes "ptt", like history).
 	out.ID, out.Chat, out.Sender, out.FromMe, out.PushName = m.ID, m.Chat, m.Sender, m.FromMe, m.PushName
 	out.Timestamp, out.Type, out.IsGroup, out.Source = m.SentAt, m.Type, chat.Server == wabin.ServerGroup, m.Source
+	out.Edited = m.EditedAt != nil
 	return out
 }
 

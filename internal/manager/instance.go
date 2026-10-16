@@ -33,6 +33,11 @@ const (
 	StatusUnassigned Status = "unassigned" // no node runs it (none alive, or all at capacity)
 )
 
+// Statuses lists every instance state, as documented in the OpenAPI
+// contract (api/openapi.json). Tests keep both in sync.
+var Statuses = []Status{StatusStarting, StatusQR, StatusQRTimeout, StatusConnecting, StatusConnected, StatusLoggedOut,
+	StatusReplaced, StatusOutdated, StatusBanned, StatusFailed, StatusStopped, StatusUnassigned}
+
 // Instance is one WhatsApp account connection managed by the Manager.
 // ID is the internal key; TenantID and Name identify it through the API
 // (Name is what the tenant sees, also in webhooks).

@@ -254,11 +254,19 @@ func (s *Store) GetOutbox(ctx context.Context, instance string, id int64) (*Outb
 	return s.outboxBy(ctx, `instance_id = $1 AND id = $2`, instance, id)
 }
 
-// NextOutbox claims the oldest due pending item. The row stays locked
-// until the caller's transaction ends (SKIP LOCKED keeps other workers off).
+// outboxHeads selects each chat's oldest pending item: messages to one
+// chat go out in order, so an item waiting for a retry holds back later
+// items to the same chat (but not to other chats).
+const outboxHeads = `status = 'pending' AND NOT EXISTS (SELECT 1 FROM wax_outbox earlier
+	WHERE earlier.instance_id = wax_outbox.instance_id AND earlier.chat = wax_outbox.chat
+	AND earlier.status = 'pending' AND earlier.id < wax_outbox.id)`
+
+// NextOutbox returns the oldest due item that heads its chat's queue.
+// Only one worker per instance sends (the instance runs on one node), so
+// the row is not kept locked.
 func (s *Store) NextOutbox(ctx context.Context, instance string) (*OutboxItem, error) {
-	it, err := s.outboxBy(ctx, `id = (SELECT id FROM wax_outbox WHERE instance_id = $1 AND status = 'pending' AND next_attempt_at <= now()
-		ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED)`, instance)
+	it, err := s.outboxBy(ctx, `id = (SELECT id FROM wax_outbox WHERE instance_id = $1 AND `+outboxHeads+`
+		AND next_attempt_at <= now() ORDER BY id LIMIT 1)`, instance)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil
 	}
@@ -283,10 +291,11 @@ func (s *Store) MarkOutboxFailed(ctx context.Context, id int64, reason string) e
 	return err
 }
 
-// NextOutboxDue returns when the next pending item is due (nil if none).
+// NextOutboxDue returns when the next sendable item (one heading its
+// chat's queue) is due, or nil if there is none.
 func (s *Store) NextOutboxDue(ctx context.Context, instance string) (*time.Time, error) {
 	var t *time.Time
-	err := s.db.QueryRow(ctx, `SELECT min(next_attempt_at) FROM wax_outbox WHERE instance_id = $1 AND status = 'pending'`, instance).Scan(&t)
+	err := s.db.QueryRow(ctx, `SELECT min(next_attempt_at) FROM wax_outbox WHERE instance_id = $1 AND `+outboxHeads, instance).Scan(&t)
 	return t, err
 }
 
@@ -301,6 +310,7 @@ type WebhookItem struct {
 	Event    string
 	Payload  []byte
 	Attempts int
+	Created  time.Time
 }
 
 // EnqueueWebhook stores an event for delivery.
@@ -324,8 +334,8 @@ func (s *Store) NextWebhook(ctx context.Context, instance string) (*WebhookItem,
 	var it WebhookItem
 	var enc []byte
 	var due time.Time
-	err := s.db.QueryRow(ctx, `SELECT id, instance_id, event, payload, attempts, next_attempt_at FROM wax_webhook_queue
-		WHERE instance_id = $1 AND status = 'pending' ORDER BY id LIMIT 1`, instance).Scan(&it.ID, &it.Instance, &it.Event, &enc, &it.Attempts, &due)
+	err := s.db.QueryRow(ctx, `SELECT id, instance_id, event, payload, attempts, created_at, next_attempt_at FROM wax_webhook_queue
+		WHERE instance_id = $1 AND status = 'pending' ORDER BY id LIMIT 1`, instance).Scan(&it.ID, &it.Instance, &it.Event, &enc, &it.Attempts, &it.Created, &due)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, nil
 	}
@@ -440,10 +450,10 @@ func (s *Store) ListChats(ctx context.Context, instance string, limit, offset in
 	rows, err := s.db.Query(ctx, `
 		SELECT c.jid, COALESCE(NULLIF(c.name, ''), ct.full_name), ct.push_name, ct.username,
 		       c.last_message_at, c.unread_count, c.archived, c.pinned, c.muted_until, COALESCE(p.phone, ''),
-		       lm.message_id, lm.sender, lm.from_me, lm.sent_at, lm.push_name, lm.type, lm.content, lm.source
+		       lm.message_id, lm.sender, lm.from_me, lm.sent_at, lm.push_name, lm.type, lm.content, lm.source, lm.edited_at
 		FROM wax_chats c`+fmt.Sprintf(identityJoin, "c.jid", "c.instance_id")+`
 		LEFT JOIN LATERAL (
-			SELECT message_id, sender, from_me, sent_at, push_name, type, content, source FROM wax_messages m
+			SELECT message_id, sender, from_me, sent_at, push_name, type, content, source, edited_at FROM wax_messages m
 			WHERE m.instance_id = c.instance_id AND m.chat = c.jid AND m.type NOT IN ('protocol', 'reaction')
 			ORDER BY m.sent_at DESC LIMIT 1
 		) lm ON true
@@ -456,14 +466,14 @@ func (s *Store) ListChats(ctx context.Context, instance string, limit, offset in
 		var c Chat
 		var id, sender, pushName, typ, source *string
 		var fromMe *bool
-		var sentAt *time.Time
+		var sentAt, editedAt *time.Time
 		var enc []byte
 		err := r.Scan(&c.JID, &c.Name, &c.PushName, &c.Username, &c.LastMessageAt, &c.UnreadCount, &c.Archived, &c.Pinned, &c.MutedUntil, &c.Phone,
-			&id, &sender, &fromMe, &sentAt, &pushName, &typ, &enc, &source)
+			&id, &sender, &fromMe, &sentAt, &pushName, &typ, &enc, &source, &editedAt)
 		if err != nil || id == nil {
 			return c, err
 		}
-		c.Last = &StoredMessage{Chat: c.JID, ID: *id, Sender: *sender, FromMe: *fromMe, SentAt: *sentAt, PushName: *pushName, Type: *typ, Source: *source}
+		c.Last = &StoredMessage{Chat: c.JID, ID: *id, Sender: *sender, FromMe: *fromMe, SentAt: *sentAt, PushName: *pushName, Type: *typ, Source: *source, EditedAt: editedAt}
 		if enc != nil {
 			c.Last.Content, err = s.sealer.open(enc, adFor(msgTable, "content", instance, c.JID, *id))
 		}
@@ -507,9 +517,9 @@ func mergeAliases(chats []Chat) []Chat {
 func (s *Store) GetMessage(ctx context.Context, instance, chat, id string) (*StoredMessage, error) {
 	var m StoredMessage
 	var enc []byte
-	err := s.db.QueryRow(ctx, aliasCTE+`SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source
+	err := s.db.QueryRow(ctx, aliasCTE+`SELECT chat, message_id, sender, from_me, sent_at, push_name, type, content, source, edited_at
 		FROM wax_messages WHERE instance_id = $1 AND chat IN (SELECT jid FROM alias) AND message_id = $3 LIMIT 1`, instance, chat, id).Scan(
-		&m.Chat, &m.ID, &m.Sender, &m.FromMe, &m.SentAt, &m.PushName, &m.Type, &enc, &m.Source)
+		&m.Chat, &m.ID, &m.Sender, &m.FromMe, &m.SentAt, &m.PushName, &m.Type, &enc, &m.Source, &m.EditedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

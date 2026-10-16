@@ -4642,6 +4642,7 @@
               "starting",
               "connecting",
               "qr",
+              "qr_timeout",
               "connected",
               "logged_out",
               "replaced",
@@ -5059,6 +5060,10 @@
           },
           "stub": {
             "$ref": "#/components/schemas/Stub"
+          },
+          "edited": {
+            "type": "boolean",
+            "description": "The sender edited the text (message listings). Edits and deletions are applied to the stored message: a deleted message becomes type stub:1 (stub name revoke)."
           }
         },
         "additionalProperties": false,

@@ -165,15 +165,69 @@ func (s *Server) scoped(h instanceHandler) http.HandlerFunc {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	rec := &statusRecorder{ResponseWriter: w, code: http.StatusOK}
+	c := &caller{}
+	r = r.WithContext(context.WithValue(r.Context(), callerKey{}, c))
 	defer func() {
 		if p := recover(); p != nil {
 			s.log.Error("api handler panicked", "path", r.URL.Path, "panic", p, "stack", string(debug.Stack()))
 			writeError(rec, http.StatusInternalServerError, errors.New("internal error"))
 		}
 		s.met.observe(r, rec.code, time.Since(start))
+		s.logRequest(r, c, rec.code, time.Since(start))
 	}()
 	r.Body = http.MaxBytesReader(rec, r.Body, maxBody)
 	s.mux.ServeHTTP(rec, r)
+}
+
+// caller is who made a request, filled in by authorized for the access log.
+type caller struct {
+	who    string // "admin", or "key <id>" for a tenant key
+	tenant string
+}
+
+type callerKey struct{}
+
+func callerOf(r *http.Request) *caller {
+	c, _ := r.Context().Value(callerKey{}).(*caller)
+	if c == nil {
+		return &caller{}
+	}
+	return c
+}
+
+// logRequest is the access log: who did what, with what result. Requests
+// that change something are logged at info level, reads (which the admin
+// interface makes constantly) at debug level. Paths are not logged, since
+// they may hold chat addresses; the route pattern and instance are.
+func (s *Server) logRequest(r *http.Request, c *caller, code int, d time.Duration) {
+	level := slog.LevelInfo
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		level = slog.LevelDebug
+	}
+	if !s.log.Enabled(r.Context(), level) {
+		return
+	}
+	route := r.Pattern
+	if route == "" {
+		route = r.Method + " (unmatched)"
+	}
+	attrs := []slog.Attr{slog.String("route", route), slog.Int("status", code),
+		slog.Int64("ms", d.Milliseconds()), slog.String("remote", r.RemoteAddr)}
+	if c.who != "" {
+		attrs = append(attrs, slog.String("caller", c.who))
+	}
+	if c.tenant != "" {
+		attrs = append(attrs, slog.String("tenant", c.tenant))
+	}
+	for _, name := range []string{"id", "tenant", "key"} {
+		if v := r.PathValue(name); v != "" {
+			attrs = append(attrs, slog.String("path_"+name, v))
+		}
+	}
+	if isForwarded(r) {
+		attrs = append(attrs, slog.Bool("forwarded", true))
+	}
+	s.log.LogAttrs(r.Context(), level, "api request", attrs...)
 }
 
 // role is what a route requires of the caller.
@@ -203,6 +257,7 @@ func (s *Server) authorized(need role, next http.HandlerFunc) http.Handler {
 			return
 		}
 		if subtle.ConstantTimeCompare([]byte(token), s.apiKey) == 1 {
+			callerOf(r).who = "admin"
 			if need != roleAdmin {
 				writeError(w, http.StatusForbidden, errors.New("the admin key manages tenants only; use a tenant key"))
 				return
@@ -218,7 +273,10 @@ func (s *Server) authorized(need role, next http.HandlerFunc) http.Handler {
 		case err != nil:
 			s.fail(w, err)
 			return
-		case need != roleTenant:
+		}
+		c := callerOf(r)
+		c.who, c.tenant = "key "+auth.KeyID, auth.TenantID
+		if need != roleTenant {
 			writeError(w, http.StatusForbidden, errors.New("this endpoint needs the admin key"))
 			return
 		}
