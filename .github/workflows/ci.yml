@@ -50,3 +50,13 @@ jobs:
         run: docker build --build-arg VERSION=ci -t wax:ci .
       - name: run it
         run: docker run --rm wax:ci version
+
+  example-nextjs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the application image
+        run: docker build -t wax-nextjs:ci examples/nextjs/web
+      - name: check the compose file
+        working-directory: examples/nextjs
+        run: WAX_MASTER_KEY=x WAX_API_KEY=x WAX_WEBHOOK_SECRET=x docker compose config -q

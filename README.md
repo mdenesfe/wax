@@ -77,6 +77,7 @@ through it, including the API and webhooks.
 | | |
 |---|---|
 | **Server with REST API and webhooks** | `docker compose up -d`, the image `ghcr.io/mdenesfe/wax`, or the programs on the [releases page](https://github.com/mdenesfe/wax/releases) (`wax serve`); or `go install github.com/mdenesfe/wax/cmd/wax@latest`. Needs PostgreSQL. |
+| **Service next to your application** | Run wax in the same Docker Compose stack as your application, in any language: it calls the REST API and receives webhooks over the compose network. See [examples/nextjs](examples/nextjs/README.md) (PostgreSQL, wax and a Next.js application). |
 | **Go library** | `go get github.com/mdenesfe/wax`: link an account and handle its messages in your own Go program. See [using wax as a library](docs/usage/library.md) and [examples/echo](examples/echo/main.go). |
 | **Learning the protocol** | Read [docs/protocol](docs/protocol/README.md) next to the code. |
 
@@ -98,6 +99,7 @@ The full API contract is served at `GET /openapi.json`.
 wax.go               the Go library: github.com/mdenesfe/wax
 proto                WhatsApp protobuf schemas and generated code (public)
 examples/echo        a minimal program using the library
+examples/nextjs      wax as a service next to a Next.js application (Docker Compose)
 cmd/wax              `wax serve` (API server), `wax run` (one account on the console), `wax version`
 cmd/wax-demo         the admin interface with made-up data
 cmd/wax-probe        raw handshake and node logging

@@ -21,6 +21,7 @@ Start with the [overview](protocol/README.md).
 - [Getting started](usage/getting-started.md): run the server, link an account, send a message
 - [REST API](usage/api.md): every endpoint with examples (the full contract is `GET /openapi.json`)
 - [Webhooks](usage/webhooks.md): events, signatures and retries
+- [Next.js example](../examples/nextjs/README.md): wax as a service next to a TypeScript application
 - [Operations](usage/operations.md): flags, tenants, several nodes, metrics, backups
 - [Admin interface](usage/admin-ui.md): the web interface, and a demo with made-up data
 - [Go library](usage/library.md): the client in your own Go program

@@ -8,6 +8,10 @@ REST API as any other client, with the key you sign in with.
 Open `http://<listen>/` in a browser, for example <http://localhost:8080/>.
 It redirects to `/ui/`.
 
+The interface is optional: everything it does goes through the REST API.
+Start the server with `-no-ui` to serve only the API, for example when
+wax runs as a service behind your own application.
+
 The screenshots on this page use made-up data from the demo server (see
 [Trying it without WhatsApp](#trying-it-without-whatsapp)).
 

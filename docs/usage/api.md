@@ -25,7 +25,7 @@ balancer) for anything beyond localhost.
 |---|---|
 | `GET /healthz` | Liveness: `{"status":"ok"}` |
 | `GET /openapi.json` | The API contract |
-| `GET /` and `GET /ui/` | The admin interface (see [admin-ui.md](admin-ui.md)) |
+| `GET /` and `GET /ui/` | The admin interface (see [admin-ui.md](admin-ui.md)); not served with `-no-ui` |
 
 **JSON.** Request bodies are JSON and unknown fields are rejected with
 `400`, so a typo in a field name fails loudly instead of being ignored.

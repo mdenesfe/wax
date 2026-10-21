@@ -1,0 +1,63 @@
+# PostgreSQL, wax and a Next.js application as three services on one
+# network. The application talks to wax at http://wax:8080 and wax delivers
+# webhooks to http://web:3000/api/wax; only the application is published.
+#
+#   cp .env.example .env    # fill in the three secrets
+#   docker compose up -d --build
+#   curl -X POST localhost:3000/api/connect
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: wax
+      POSTGRES_PASSWORD: wax
+      POSTGRES_DB: wax
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Over TCP: during first start-up the socket answers before the server
+      # listens on the network.
+      test: ["CMD", "pg_isready", "-U", "wax", "-h", "127.0.0.1"]
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
+
+  wax:
+    # Built from this repository; outside it, use the released image
+    # instead: image: ghcr.io/mdenesfe/wax:<version>
+    build: ../..
+    # Only the API (no admin interface). The receiver is on the private
+    # network, so private webhook addresses are allowed (they are refused
+    # by default).
+    command: ["serve", "-listen", "0.0.0.0:8080", "-no-ui", "-allow-private-webhooks"]
+    environment:
+      WAX_DATABASE_URL: postgres://wax:wax@postgres:5432/wax?sslmode=disable
+      WAX_MASTER_KEY: ${WAX_MASTER_KEY:?set WAX_MASTER_KEY in .env}
+      WAX_API_KEY: ${WAX_API_KEY:?set WAX_API_KEY in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      WAX_URL: http://wax:8080
+      WAX_API_KEY: ${WAX_API_KEY:?set WAX_API_KEY in .env}
+      WAX_WEBHOOK_SECRET: ${WAX_WEBHOOK_SECRET:?set WAX_WEBHOOK_SECRET in .env}
+      WAX_WEBHOOK_URL: http://web:3000/api/wax
+      # Optional: a tenant key issued beforehand. Without it the application
+      # creates the tenant "app" and keeps its key in the volume below.
+      WAX_TENANT_KEY: ${WAX_TENANT_KEY:-}
+    volumes:
+      - webdata:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - wax
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}
+  webdata: {}

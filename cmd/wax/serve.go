@@ -31,6 +31,7 @@ type serveOptions struct {
 	maxInstances         int
 	tenantRPS            int
 	metricsListen        string
+	noUI                 bool
 }
 
 // serveCommand runs the multi-instance API server.
@@ -48,6 +49,7 @@ func serveCommand(args []string) {
 	fs.StringVar(&o.advertise, "advertise", "", "URL where the other nodes reach this node's API (default: http://<listen>)")
 	fs.IntVar(&o.maxInstances, "max-instances", 0, "most instances this node runs (0: no limit)")
 	fs.StringVar(&o.metricsListen, "metrics-listen", "", "serve Prometheus metrics at http://<addr>/metrics (keep it internal; empty: off)")
+	fs.BoolVar(&o.noUI, "no-ui", false, "serve only the API, without the admin interface at /ui/")
 	fs.IntVar(&o.tenantRPS, "tenant-rps", api.DefaultRequestsPerSecond, "API requests per second per tenant, unless the tenant has its own limit (per node)")
 	_ = fs.Parse(args)
 	o.checkVersion = !*noVersionCheck
@@ -94,7 +96,7 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 
 	srv := &http.Server{
 		Addr:              o.listen,
-		Handler:           api.New(m, st, apiKey, log, api.Options{DefaultRequestsPerSecond: o.tenantRPS, Metrics: reg}),
+		Handler:           api.New(m, st, apiKey, log, api.Options{DefaultRequestsPerSecond: o.tenantRPS, Metrics: reg, NoUI: o.noUI}),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute, // large media uploads
 		WriteTimeout:      5 * time.Minute,

@@ -61,6 +61,8 @@ type Options struct {
 	DefaultRequestsPerSecond int
 	// Metrics receives request metrics (nil: disabled).
 	Metrics *metrics.Registry
+	// NoUI leaves out the admin interface: only the API is served.
+	NoUI bool
 }
 
 // New builds the API handler.
@@ -70,7 +72,7 @@ func New(m *manager.Manager, st *store.Store, apiKey string, log *slog.Logger, o
 		limits:   newTenantLimiter(opts.DefaultRequestsPerSecond),
 		met:      newAPIMetrics(opts.Metrics),
 		nodeHTTP: &http.Transport{ResponseHeaderTimeout: 5 * time.Minute, IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 16}}
-	s.routes()
+	s.routes(!opts.NoUI)
 	return s
 }
 
@@ -121,15 +123,17 @@ func (s *Server) routeTable() []route {
 	}
 }
 
-func (s *Server) routes() {
+func (s *Server) routes(ui bool) {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthJSON{Status: "ok"})
 	})
 	s.mux.HandleFunc("GET /openapi.json", serveOpenAPI)
 	// The admin interface (static files; it calls this API with the key
 	// the user signs in with).
-	s.mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Handler()))
-	s.mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
+	if ui {
+		s.mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Handler()))
+		s.mux.Handle("GET /{$}", http.RedirectHandler("/ui/", http.StatusFound))
+	}
 	for _, rt := range s.routeTable() {
 		if rt.instance != nil {
 			s.mux.Handle(rt.pattern, s.authorized(roleTenant, s.scoped(rt.instance)))

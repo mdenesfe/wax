@@ -30,6 +30,7 @@ prints the same list.
 | `-log-level <level>` | `info` | `debug`, `info`, `warn` or `error`. |
 | `-version <v>` | (detect) | WhatsApp Web version to announce. By default the live version is detected, falling back to the built-in one. |
 | `-no-version-check` | off | Do not query web.whatsapp.com for the current version (neither at start nor periodically). |
+| `-no-ui` | off | Serve only the API: no admin interface at `/ui/` (for wax running as a service behind your own application). |
 | `-allow-private-webhooks` | off | Allow webhook receivers on loopback and private networks. Off by default to prevent SSRF; see [webhooks.md](webhooks.md#private-address-protection). |
 | `-node-id <id>` | hostname + random suffix | This node's id when several nodes share the database. |
 | `-advertise <url>` | `http://<listen>` | URL where the other nodes reach this node's API, for forwarded requests. |
