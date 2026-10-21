@@ -212,7 +212,7 @@ as an already handled message.
 The version byte is `0x33`: message version in the high nibble, current
 version in the low nibble. Parsers look only at the high nibble and reject
 anything other than 3 (`ErrLegacyVersion` below, `ErrInvalidMessage` above).
-Field definitions: `internal/proto/signalwire/signalwire.proto`.
+Field definitions: `proto/signalwire/signalwire.proto`.
 
 ### `msg`: SignalMessage
 
@@ -402,7 +402,7 @@ retries from `wax_sent_messages`. Details are in
 | KDF constants, chain and message keys | `internal/signal/kdf.go` |
 | X3DH, encrypt, decrypt | `internal/signal/cipher.go` (`ProcessBundle`, `initAlice`, `initBob`, `Encrypt`, `DecryptMessage`, `DecryptPreKeyMessage`) |
 | Session state, limits, serialization | `internal/signal/session.go` |
-| Wire formats, MAC | `internal/signal/message.go`, `internal/proto/signalwire/signalwire.proto` |
+| Wire formats, MAC | `internal/signal/message.go`, `proto/signalwire/signalwire.proto` |
 | Sender keys | `internal/signal/senderkey.go` |
 | Bundle fetch and parsing | `internal/client/usync.go` (`fetchBundles`, `parseBundle`) |
 | Encrypt call sites | `internal/client/send.go` (`encryptForDevices`, `encryptForDevice`, `senderKeyEncrypt`, `sendGroup`) |

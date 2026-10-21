@@ -332,7 +332,7 @@ On every login, before live stanzas, `replayDeferred` ([internal/client/replay.g
 
 ## Message content model
 
-wax uses a subset of WhatsApp Web's E2E protobuf, defined in [internal/proto/wae2e/wae2e.proto](../../internal/proto/wae2e/wae2e.proto). Field numbers match WhatsApp Web, and unknown fields survive decoding and re-encoding.
+wax uses a subset of WhatsApp Web's E2E protobuf, defined in [proto/wae2e/wae2e.proto](../../proto/wae2e/wae2e.proto). Field numbers match WhatsApp Web, and unknown fields survive decoding and re-encoding.
 
 | Field (number) | Use in wax |
 |---|---|
@@ -391,4 +391,4 @@ wax is not a calling device: it cannot accept or place calls.
 | Presence, chat state, calls | [internal/client/presence.go](../../internal/client/presence.go), [internal/client/call.go](../../internal/client/call.go) |
 | Events | [internal/client/events.go](../../internal/client/events.go): `Message`, `UndecryptableMessage`, `Receipt` |
 | JSON view, stubs | [internal/manager/events.go](../../internal/manager/events.go): `DescribeMessage`; [internal/manager/stub.go](../../internal/manager/stub.go): `DescribeStub` |
-| Protobuf schema | [internal/proto/wae2e/wae2e.proto](../../internal/proto/wae2e/wae2e.proto) |
+| Protobuf schema | [proto/wae2e/wae2e.proto](../../proto/wae2e/wae2e.proto) |

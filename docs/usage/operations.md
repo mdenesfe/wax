@@ -284,9 +284,14 @@ from an old one.
 ## Upgrading
 
 1. Back up the database.
-2. Build or download the new binary.
-3. Stop the old process with SIGTERM and start the new one. Migrations run
-   on start.
+2. Get the new version: a program from the
+   [releases page](https://github.com/mdenesfe/wax/releases) (with
+   `checksums.txt` to verify it), the image `ghcr.io/mdenesfe/wax:<version>`,
+   or a build of the tag (`docker compose build` after `git pull`).
+   `wax version` prints the running version, and the server logs it at
+   start (`wax` in the `api listening` line).
+3. Stop the old process with SIGTERM and start the new one (with Docker
+   Compose: `docker compose up -d`). Migrations run on start.
 
 With several nodes, replace them one at a time. A node that stops
 gracefully hands its instances to the others within seconds, and they

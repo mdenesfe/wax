@@ -278,5 +278,5 @@ If a key is missing during recovery, the response is dropped silently; the recov
 | Events | `internal/client/events.go` (`AppStateChange`, `AppStateSyncComplete`, `AppStateUnverified`, `AppStateSyncError`) |
 | Keys, versions, MACs, contacts, chats, NCT salt | `internal/store/sync.go` |
 | Tables | `internal/store/migrations/005_sync.sql`, `internal/store/migrations/007_appstate_unverified.sql` |
-| Protobufs | `internal/proto/waserversync/waserversync.proto`, `internal/proto/wasyncaction/wasyncaction.proto`, `internal/proto/wae2e/wae2e.proto` (key share and request) |
+| Protobufs | `proto/waserversync/waserversync.proto`, `proto/wasyncaction/wasyncaction.proto`, `proto/wae2e/wae2e.proto` (key share and request) |
 | End-to-end test (key request, key share, snapshot, patch) | `internal/client/phase5_test.go` |

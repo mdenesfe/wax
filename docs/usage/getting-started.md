@@ -1,32 +1,27 @@
 # Getting started
 
 This guide takes you from a fresh checkout to a linked WhatsApp account that
-sends a message and delivers incoming events to a webhook. It uses the
-development PostgreSQL from `docker-compose.yml` and runs everything on
-`localhost`.
+sends a message and delivers incoming events to a webhook, on `localhost`.
+Steps 1 to 3 have two variants: **Docker** (nothing else to install) or
+**from source** (with Go). From step 4 on they are the same.
 
 ## Requirements
 
-- **Go 1.25 or newer** (`go.mod` declares `go 1.25.0`).
-- **Docker** with Compose, for the development PostgreSQL. Any PostgreSQL
-  you can reach works too; Docker is only the quickest way to get one.
+- **Docker** with Compose. For the source variant also **Go 1.25 or
+  newer** (`go.mod` declares `go 1.25.0`). Any PostgreSQL you can reach
+  works instead of the bundled one.
 - A phone with WhatsApp, to scan the QR code (WhatsApp, Settings, Linked
   devices, Link a device).
 
 `protoc` and `protoc-gen-go` are needed only if you change the `.proto`
 files; using wax does not need them.
 
-## 1. Start PostgreSQL
+## 1. Get wax and set the secrets
 
 ```bash
-docker compose up -d
+git clone https://github.com/mdenesfe/wax && cd wax
+cp .env.example .env
 ```
-
-This starts PostgreSQL 17 on `127.0.0.1:5433` with user, password and
-database all set to `wax`, and also creates a separate `wax_test` database
-for the test suite. The data lives in the `wax-pg` Docker volume.
-
-## 2. Set the three secrets
 
 wax reads **only secrets** from the environment. Everything else is a
 command-line flag, so `.env` holds these values and nothing more:
@@ -35,13 +30,7 @@ command-line flag, so `.env` holds these values and nothing more:
 |---|---|---|
 | `WAX_API_KEY` | The admin key: a bearer token that manages tenants and their keys. At least 32 characters. | `openssl rand -hex 32` |
 | `WAX_MASTER_KEY` | 32 random bytes, base64 encoded. Encrypts all private keys, sessions and other secrets at rest, and keys the HMAC of tenant API keys. | `openssl rand -base64 32` |
-| `WAX_DATABASE_URL` | PostgreSQL DSN. It contains the database password, which is why it counts as a secret. | Your database; the compose default is below. |
-
-Copy the template and fill it in:
-
-```bash
-cp .env.example .env
-```
+| `WAX_DATABASE_URL` | PostgreSQL DSN. It contains the database password, which is why it counts as a secret. With Docker Compose it is set for you. | Your database; the compose default is below. |
 
 ```dotenv
 WAX_DATABASE_URL=postgres://wax:wax@127.0.0.1:5433/wax?sslmode=disable
@@ -52,35 +41,50 @@ WAX_API_KEY=<output of: openssl rand -hex 32>
 (`.env.example` also lists `WAX_TEST_DATABASE_URL`, which only the test
 suite reads.)
 
-If `WAX_DATABASE_URL` is empty, wax falls back to the compose database
-above. `WAX_MASTER_KEY` has no default: the process refuses to start without
-a valid one.
+`WAX_MASTER_KEY` has no default: wax refuses to start without a valid one.
 
 > **Keep `WAX_MASTER_KEY` safe and separate from database backups.** Without
 > it the sealed data in the database cannot be decrypted: every account has
 > to be linked again and every tenant key reissued. See
 > [operations.md](operations.md#backups-and-the-master-key).
 
-## 3. Run the server
+## 2. Start wax
+
+### With Docker
 
 ```bash
+docker compose up -d
+```
+
+This builds the wax image and starts it with PostgreSQL 17. wax listens on
+`127.0.0.1:8080`; its database is the `wax-pg` Docker volume (also reachable
+on `127.0.0.1:5433`). `docker compose logs -f wax` shows the logs. Instead
+of building, you can use the published image `ghcr.io/mdenesfe/wax`
+(`docker run ... ghcr.io/mdenesfe/wax:latest`, with the three variables
+above).
+
+### From source
+
+Start only the database, then run wax with Go:
+
+```bash
+docker compose up -d postgres            # PostgreSQL on 127.0.0.1:5433 (and a wax_test database)
 set -a; source .env; set +a
 go run ./cmd/wax serve -listen 127.0.0.1:8080 -log-level info
 ```
 
-Or build a binary first:
+Or build a program (`go build -o wax ./cmd/wax`, or
+`go install github.com/mdenesfe/wax/cmd/wax@latest`, or download one from
+the [releases page](https://github.com/mdenesfe/wax/releases)) and run
+`./wax serve -listen 127.0.0.1:8080`. `serve` is the default command, so
+`./wax` alone does the same; `wax version` prints the version.
 
-```bash
-go build -o wax ./cmd/wax
-./wax serve -listen 127.0.0.1:8080
-```
+## 3. Check that it runs
 
-`serve` is the default command, so `./wax` alone does the same. On start the
-server connects to the database, applies any pending migrations, detects
-the current WhatsApp Web version and starts listening. Logs are JSON lines
-on stderr. `Ctrl+C` (SIGINT) or SIGTERM shuts it down gracefully.
-
-Check that it is up:
+On start wax connects to the database, applies any pending migrations,
+detects the current WhatsApp Web version and starts listening. Logs are
+JSON lines on stderr. `Ctrl+C` (SIGINT) or SIGTERM shuts it down
+gracefully.
 
 ```bash
 curl http://localhost:8080/healthz
@@ -217,6 +221,19 @@ loopback and private addresses (protection against server-side request
 forgery). For local testing, start the server with `-allow-private-webhooks`
 and use a URL such as `http://localhost:9000/hook`. Do not enable it in
 production unless the receiver really is on a private network.
+
+With Docker, `localhost` is the container itself. Add the flag and a way to
+reach your machine in a `docker-compose.override.yml` next to
+`docker-compose.yml`, run `docker compose up -d` again, and use
+`http://host.docker.internal:9000/hook` with the receiver listening on all
+interfaces (`0.0.0.0` instead of `127.0.0.1` below):
+
+```yaml
+services:
+  wax:
+    command: ["serve", "-listen", "0.0.0.0:8080", "-allow-private-webhooks"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+```
 
 A quick receiver for testing, in one line of Python:
 

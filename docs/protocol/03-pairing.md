@@ -144,7 +144,7 @@ basis and is informational only.
 ### ADV verification
 
 `<device-identity>` holds three nested protobufs from
-`internal/proto/waadv/waadv.proto`:
+`proto/waadv/waadv.proto`:
 
 ```
 ADVSignedDeviceIdentityHMAC

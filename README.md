@@ -55,22 +55,30 @@ What is not implemented yet is listed at the end of each protocol chapter.
 Try the admin interface with made-up data, no WhatsApp account needed:
 
 ```bash
-go run ./cmd/wax-demo          # http://127.0.0.1:8090, sign in with any key
+go run github.com/mdenesfe/wax/cmd/wax-demo@latest   # http://127.0.0.1:8090, any key signs in
 ```
 
-Run the server and link a real account:
+Run wax with Docker (the server and its PostgreSQL):
 
 ```bash
-docker compose up -d                      # PostgreSQL on 127.0.0.1:5433
-cp .env.example .env                      # fill in the three secrets
-set -a; source .env; set +a
-go run ./cmd/wax serve                    # http://127.0.0.1:8080
+git clone https://github.com/mdenesfe/wax && cd wax
+cp .env.example .env     # set WAX_MASTER_KEY (openssl rand -base64 32) and WAX_API_KEY (openssl rand -hex 32)
+docker compose up -d     # http://127.0.0.1:8080
 ```
 
-Then open the admin interface, add a WhatsApp account and scan its QR code
-from the phone (Settings, Linked devices). The
-[getting started guide](docs/usage/getting-started.md) walks through it,
-including the API and webhooks.
+Open the admin interface, sign in with `WAX_API_KEY`, create a tenant and
+a key, sign in with that key, add a WhatsApp account and scan its QR code
+from the phone (Settings, Linked devices). Then use the REST API from any
+language. The [getting started guide](docs/usage/getting-started.md) walks
+through it, including the API and webhooks.
+
+## Ways to use wax
+
+| | |
+|---|---|
+| **Server with REST API and webhooks** | `docker compose up -d`, the image `ghcr.io/mdenesfe/wax`, or the programs on the [releases page](https://github.com/mdenesfe/wax/releases) (`wax serve`); or `go install github.com/mdenesfe/wax/cmd/wax@latest`. Needs PostgreSQL. |
+| **Go library** | `go get github.com/mdenesfe/wax`: link an account and handle its messages in your own Go program. See [using wax as a library](docs/usage/library.md) and [examples/echo](examples/echo/main.go). |
+| **Learning the protocol** | Read [docs/protocol](docs/protocol/README.md) next to the code. |
 
 ## Documentation
 
@@ -78,7 +86,8 @@ including the API and webhooks.
 - **Using wax:** [getting started](docs/usage/getting-started.md),
   [REST API](docs/usage/api.md), [webhooks](docs/usage/webhooks.md),
   [operations](docs/usage/operations.md),
-  [admin interface](docs/usage/admin-ui.md)
+  [admin interface](docs/usage/admin-ui.md),
+  [Go library](docs/usage/library.md)
 - **Inside wax:** [architecture](docs/architecture.md)
 
 The full API contract is served at `GET /openapi.json`.
@@ -86,7 +95,10 @@ The full API contract is served at `GET /openapi.json`.
 ## Layout
 
 ```
-cmd/wax              `wax serve` (API server) and `wax run` (one account on the console)
+wax.go               the Go library: github.com/mdenesfe/wax
+proto                WhatsApp protobuf schemas and generated code (public)
+examples/echo        a minimal program using the library
+cmd/wax              `wax serve` (API server), `wax run` (one account on the console), `wax version`
 cmd/wax-demo         the admin interface with made-up data
 cmd/wax-probe        raw handshake and node logging
 api                  REST API, tenants, node forwarding, OpenAPI
@@ -101,26 +113,26 @@ internal/client      the session: connect loop, handlers, sending, sync, groups,
 internal/store       PostgreSQL persistence; secrets sealed with WAX_MASTER_KEY
 internal/manager     accounts, leases, send queue, webhooks, metrics
 internal/webui       the embedded admin interface
-internal/proto       protobuf schemas and generated code
 internal/testutil    the fake WhatsApp server used by the tests
 scripts              documentation screenshots
 ```
 
-## Requirements
+## Building and testing
 
-- Go 1.25 or newer
-- PostgreSQL (a Docker Compose file is included for development)
-- protoc and protoc-gen-go, only when changing `.proto` files
-
-## Tests
+Needs Go 1.25 or newer and Docker (for PostgreSQL); `protoc` and
+`protoc-gen-go` only when changing `.proto` files.
 
 ```bash
-go test -race ./...    # unit tests; database tests are skipped
+docker compose up -d postgres        # the database only, on 127.0.0.1:5433
+go build ./cmd/wax
+go test -race ./...                  # database tests are skipped
 WAX_TEST_DATABASE_URL=postgres://wax:wax@127.0.0.1:5433/wax_test?sslmode=disable go test -race ./...
 ```
 
-The second form also runs the store tests, the end-to-end client tests
-against the fake WhatsApp server and the API end-to-end tests.
+The second test run also covers the store, the end-to-end client tests
+against the fake WhatsApp server and the API. See
+[CONTRIBUTING.md](CONTRIBUTING.md) to contribute and
+[SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Disclaimer
 

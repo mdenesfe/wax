@@ -76,7 +76,7 @@ So the first message on the wire looks like:
 -> s, se               (+ encrypted ClientPayload)
 ```
 
-Handshake messages are protobuf `HandshakeMessage` values (`internal/proto/wa6/wa6.proto`), each sent as one plain (unencrypted) frame:
+Handshake messages are protobuf `HandshakeMessage` values (`proto/wa6/wa6.proto`), each sent as one plain (unencrypted) frame:
 
 | Step | Field | Contents |
 |---|---|---|
@@ -127,7 +127,7 @@ A responder implementation, `transport.ServerHandshake()` in `internal/transport
 
 ## Server certificate verification
 
-`CertVerifier.Verify()` in `internal/transport/cert.go` checks the decrypted `serverHello.payload`, a protobuf `CertChain` (`internal/proto/wacert/wacert.proto`):
+`CertVerifier.Verify()` in `internal/transport/cert.go` checks the decrypted `serverHello.payload`, a protobuf `CertChain` (`proto/wacert/wacert.proto`):
 
 ```
 CertChain

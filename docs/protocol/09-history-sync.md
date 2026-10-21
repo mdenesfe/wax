@@ -212,4 +212,4 @@ The manager forwards it as the `history_sync` webhook event with keys `type`, `c
 | Tables | `internal/store/migrations/005_sync.sql` |
 | Stub message names and description | `internal/manager/stub.go` (`DescribeStub`) |
 | Event and webhook | `internal/client/events.go` (`HistorySync`), `internal/manager/events.go` |
-| Protobufs | `internal/proto/wahistorysync/wahistorysync.proto`, `internal/proto/wae2e/wae2e.proto` (`HistorySyncNotification`) |
+| Protobufs | `proto/wahistorysync/wahistorysync.proto`, `proto/wae2e/wae2e.proto` (`HistorySyncNotification`) |

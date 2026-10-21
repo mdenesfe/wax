@@ -18,9 +18,10 @@ about the manager, and the manager knows nothing about HTTP.
 
 ```
  +--------------------------------------------------------------------------+
- |  cmd/wax (serve, run)    cmd/wax-probe                                    |
+ |  cmd/wax (serve, run)    cmd/wax-probe    cmd/wax-demo    examples/*     |
  +--------------------------------------------------------------------------+
  |  api  (REST, auth, forwarding, limits, metrics, OpenAPI)  --> webui      |
+ |  wax  (the public Go library, a facade over internal/client)             |
  +--------------------------------------------------------------------------+
  |  internal/manager  (instances, leases, outbox, webhooks, metrics)        |
  +--------------------------------------------------------------------------+
@@ -42,7 +43,7 @@ about the manager, and the manager knows nothing about HTTP.
 | [internal/media](../internal/media) | Media encryption (HKDF keys, AES-CBC plus HMAC), upload and download, WebM to Ogg conversion |
 | [internal/appstate](../internal/appstate) | App state sync: LTHash, mutation keys and MACs, patch and snapshot decoding |
 | [internal/pairing](../internal/pairing) | QR content and rendering, pair-success verification |
-| [internal/proto](../internal/proto) | Protobuf schemas and generated code |
+| [proto](../proto) | Protobuf schemas and generated code; public, since message contents are these types |
 | [internal/cryptoutil](../internal/cryptoutil), [internal/backoff](../internal/backoff), [internal/waversion](../internal/waversion), [internal/ratelimit](../internal/ratelimit), [internal/metrics](../internal/metrics) | Shared helpers: HKDF/HMAC/AES, backoff with jitter, client version detection, token bucket, Prometheus text output |
 | [internal/store](../internal/store) | PostgreSQL persistence; imports `keys`, `signal`, `appstate` and `wabin` for its row types |
 | [internal/client](../internal/client) | One linked-device session: connect loop, pairing, login, messages, groups, media, sync |
@@ -51,9 +52,13 @@ about the manager, and the manager knows nothing about HTTP.
 | [internal/webui](../internal/webui) | Embedded admin interface (static files) |
 | [cmd/wax](../cmd/wax) | `wax serve` (API server, default) and `wax run` (one instance on the console) |
 | [internal/testutil/fakewa](../internal/testutil/fakewa) | In-process fake WhatsApp server for tests |
+| [wax](../wax.go) (module root) | The public Go library: `Open`, `Run`, events, sending, groups, profiles; type aliases over `internal/client`, which stays free to change ([usage/library.md](usage/library.md)) |
+| [cmd/wax-demo](../cmd/wax-demo), [examples/echo](../examples/echo) | The admin interface with made-up data; a minimal library program |
 
 `wax run` ([cmd/wax/run.go](../cmd/wax/run.go)) uses `internal/client`
-directly, without the manager or the API. `cmd/wax-probe` is a phase 1 tool
+directly, without the manager or the API, and so does the public library
+`wax`: neither takes leases, so an account must run in one process at a
+time there. `cmd/wax-probe` is a phase 1 tool
 that performs the raw handshake and logs nodes.
 
 ## The client

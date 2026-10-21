@@ -23,6 +23,7 @@ Start with the [overview](protocol/README.md).
 - [Webhooks](usage/webhooks.md): events, signatures and retries
 - [Operations](usage/operations.md): flags, tenants, several nodes, metrics, backups
 - [Admin interface](usage/admin-ui.md): the web interface, and a demo with made-up data
+- [Go library](usage/library.md): the client in your own Go program
 
 ## Inside wax
 
