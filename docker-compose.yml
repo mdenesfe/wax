@@ -1,4 +1,6 @@
-# Development database. Start with: docker compose up -d
+# wax and its database: `docker compose up -d`, then open http://127.0.0.1:8080.
+# The secrets come from .env (see .env.example). For development, start
+# only the database (`docker compose up -d postgres`) and run wax with go.
 services:
   postgres:
     image: postgres:17
@@ -16,5 +18,19 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  wax:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      WAX_DATABASE_URL: postgres://wax:wax@postgres:5432/wax?sslmode=disable
+      WAX_MASTER_KEY: ${WAX_MASTER_KEY:-}   # required; wax refuses to start without it
+      WAX_API_KEY: ${WAX_API_KEY:-}         # required, at least 32 characters
+    ports:
+      - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
 volumes:
   wax-pg:

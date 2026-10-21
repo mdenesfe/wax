@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: wax
+          POSTGRES_PASSWORD: wax
+          POSTGRES_DB: wax_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wax"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      WAX_TEST_DATABASE_URL: postgres://wax:wax@localhost:5432/wax_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "not formatted:"; echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - name: tests (with PostgreSQL)
+        run: go test -race -count=1 ./...
+      - name: admin interface script
+        run: node --check internal/webui/static/app.js
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build the image
+        run: docker build --build-arg VERSION=ci -t wax:ci .
+      - name: run it
+        run: docker run --rm wax:ci version

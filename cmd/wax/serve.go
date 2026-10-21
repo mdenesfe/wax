@@ -102,7 +102,7 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 	}
 	errCh := make(chan error, 2)
 	go func() { errCh <- srv.ListenAndServe() }()
-	log.Info("api listening", "addr", o.listen)
+	log.Info("api listening", "addr", o.listen, "wax", programVersion())
 	if reg != nil {
 		msrv := metricsServer(o.metricsListen, reg)
 		defer msrv.Close()
