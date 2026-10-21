@@ -7,7 +7,7 @@ a webhook. This example runs three services with Docker Compose:
 | Service | What it is | Address on the compose network |
 |---|---|---|
 | `postgres` | wax's database | `postgres:5432` |
-| `wax` | the wax server, API only (built from this repository; elsewhere use `ghcr.io/mdenesfe/wax`) | `http://wax:8080` |
+| `wax` | the wax server, API only (`ghcr.io/mdenesfe/wax`) | `http://wax:8080` |
 | `web` | a Next.js application (`web/`) | `http://web:3000`, published on `localhost:3000` |
 
 Only the application is published; wax and PostgreSQL are reachable only
