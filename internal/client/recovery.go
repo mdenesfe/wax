@@ -12,9 +12,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/appstate"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
-	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/proto/wae2e"
+	"github.com/mdenesfe/wax/proto/wasyncaction"
 )
 
 // recoveryInterval limits fatal-recovery requests per collection.

@@ -1,0 +1,105 @@
+// Decrypted app state mutation payloads (WhatsApp Web module
+// "WAWebProtobufSyncAction"), subset. Field numbers MUST match WhatsApp Web.
+syntax = "proto2";
+package wax.wasyncaction;
+option go_package = "github.com/mdenesfe/wax/proto/wasyncaction";
+
+import "wae2e/wae2e.proto";
+
+message SyncActionData {
+	optional bytes           index   = 1; // JSON array of strings
+	optional SyncActionValue value   = 2;
+	optional bytes           padding = 3;
+	optional int32           version = 4;
+}
+
+message SyncActionValue {
+	optional int64                    timestamp                = 1; // milliseconds
+	optional StarAction               starAction               = 2;
+	optional ContactAction            contactAction            = 3;
+	optional MuteAction               muteAction               = 4;
+	optional PinAction                pinAction                = 5;
+	optional PushNameSetting          pushNameSetting          = 7;
+	optional ArchiveChatAction        archiveChatAction        = 17;
+	optional DeleteMessageForMeAction deleteMessageForMeAction = 18;
+	optional MarkChatAsReadAction     markChatAsReadAction     = 20;
+	optional ClearChatAction          clearChatAction          = 21;
+	optional DeleteChatAction         deleteChatAction         = 22;
+	optional LidContactAction         lidContactAction         = 61;
+	optional NctSaltSyncAction        nctSaltSyncAction        = 80;
+}
+
+message StarAction { optional bool starred = 1; }
+
+message ContactAction {
+	optional string fullName  = 1;
+	optional string firstName = 2;
+	optional string lidJID    = 3;
+	optional bool   saveOnPrimaryAddressbook = 4;
+	optional string pnJID     = 5;
+	optional string username  = 6;
+}
+
+message MuteAction {
+	optional bool  muted            = 1;
+	optional int64 muteEndTimestamp = 2; // ms; -1 = forever
+	optional bool  autoMuted        = 3;
+}
+
+message PinAction { optional bool pinned = 1; }
+
+message PushNameSetting { optional string name = 1; }
+
+message SyncActionMessage {
+	optional wax.wae2e.MessageKey key       = 1;
+	optional int64                timestamp = 2;
+}
+
+message SyncActionMessageRange {
+	optional int64             lastMessageTimestamp       = 1;
+	optional int64             lastSystemMessageTimestamp = 2;
+	repeated SyncActionMessage messages                   = 3;
+}
+
+message ArchiveChatAction {
+	optional bool                   archived     = 1;
+	optional SyncActionMessageRange messageRange = 2;
+}
+
+message DeleteMessageForMeAction {
+	optional bool  deleteMedia      = 1;
+	optional int64 messageTimestamp = 2;
+}
+
+message MarkChatAsReadAction {
+	optional bool                   read         = 1;
+	optional SyncActionMessageRange messageRange = 2;
+}
+
+message ClearChatAction { optional SyncActionMessageRange messageRange = 1; }
+
+message DeleteChatAction { optional SyncActionMessageRange messageRange = 1; }
+
+message LidContactAction {
+	optional string fullName  = 1;
+	optional string firstName = 2;
+	optional string username  = 3;
+}
+
+message NctSaltSyncAction { optional bytes salt = 1; }
+
+// From WhatsApp Web module "WAWebProtobufsSyncdSnapshotRecovery": a
+// collection as the primary device sees it, sent during fatal recovery.
+message SyncdSnapshotRecovery {
+	message SyncdVersion { optional uint64 version = 1; }
+	optional SyncdVersion         version          = 1;
+	optional string               collectionName   = 2;
+	repeated SyncdPlainTextRecord mutationRecords  = 3;
+	optional bytes                collectionLthash = 4;
+}
+
+message SyncdPlainTextRecord {
+	optional SyncActionData value = 1;
+	optional bytes          keyID = 2;
+	optional bytes          mac   = 3; // value MAC
+}

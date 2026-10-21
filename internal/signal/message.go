@@ -9,7 +9,7 @@ import (
 
 	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/signalwire"
+	"github.com/mdenesfe/wax/proto/signalwire"
 )
 
 // Errors returned by the protocol.

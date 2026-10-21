@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 // TestAddPreview: preview details land in the right message fields; a

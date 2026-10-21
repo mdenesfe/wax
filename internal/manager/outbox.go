@@ -10,10 +10,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/client"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/ratelimit"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 // Outbox policy.

@@ -6,9 +6,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wa6"
 	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
+	"github.com/mdenesfe/wax/proto/wa6"
 )
 
 func TestRegistrationPayload(t *testing.T) {

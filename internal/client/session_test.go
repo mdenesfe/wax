@@ -14,11 +14,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/waadv"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
 	"github.com/mdenesfe/wax/internal/wabin"
 	"github.com/mdenesfe/wax/internal/waversion"
+	"github.com/mdenesfe/wax/proto/waadv"
 )
 
 // Placeholder test number; no real account is involved.

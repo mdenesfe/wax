@@ -3,9 +3,9 @@ package client
 import (
 	"time"
 
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
-	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
+	"github.com/mdenesfe/wax/proto/wasyncaction"
 )
 
 // Event is emitted to Config.OnEvent. Handlers run synchronously on the

@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wacert"
+	"github.com/mdenesfe/wax/proto/wacert"
 )
 
 var testPrologue = []byte{'W', 'A', 6, 3}

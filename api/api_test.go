@@ -20,10 +20,10 @@ import (
 	"github.com/mdenesfe/wax/internal/backoff"
 	"github.com/mdenesfe/wax/internal/manager"
 	"github.com/mdenesfe/wax/internal/metrics"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 const testKey = "test-api-key-0123456789abcdef0123456789"

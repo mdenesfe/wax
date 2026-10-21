@@ -13,10 +13,10 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/media"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 var testGroup = wabin.JID{User: "120363000000000001", Server: wabin.ServerGroup}

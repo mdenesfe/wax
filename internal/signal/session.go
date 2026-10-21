@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/signalstore"
+	"github.com/mdenesfe/wax/proto/signalstore"
 )
 
 type senderChain struct {

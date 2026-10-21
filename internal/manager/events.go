@@ -8,8 +8,8 @@ import (
 
 	"github.com/mdenesfe/wax/internal/client"
 	"github.com/mdenesfe/wax/internal/pairing"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 // Envelope is the JSON body of every webhook delivery.

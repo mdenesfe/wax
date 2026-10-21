@@ -9,9 +9,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wa6"
-	"github.com/mdenesfe/wax/internal/proto/wacompanionreg"
 	"github.com/mdenesfe/wax/internal/waversion"
+	"github.com/mdenesfe/wax/proto/wa6"
+	"github.com/mdenesfe/wax/proto/wacompanionreg"
 )
 
 // DeviceConfig describes how this companion presents itself.

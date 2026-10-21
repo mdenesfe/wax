@@ -21,11 +21,11 @@ import (
 
 	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wa6"
-	"github.com/mdenesfe/wax/internal/proto/waadv"
-	"github.com/mdenesfe/wax/internal/proto/wacert"
 	"github.com/mdenesfe/wax/internal/transport"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wa6"
+	"github.com/mdenesfe/wax/proto/waadv"
+	"github.com/mdenesfe/wax/proto/wacert"
 )
 
 // Prologue is the connection header the client must send.

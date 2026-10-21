@@ -12,8 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/manager"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
 	"github.com/mdenesfe/wax/internal/store"
+	"github.com/mdenesfe/wax/proto/wae2e"
 )
 
 // TestRepliesMentionsForwards: replies quote the stored message, mentions

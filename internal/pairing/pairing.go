@@ -16,9 +16,9 @@ import (
 
 	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/waadv"
-	"github.com/mdenesfe/wax/internal/proto/wacompanionreg"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/waadv"
+	"github.com/mdenesfe/wax/proto/wacompanionreg"
 )
 
 // QRPrefix is prepended to the comma separated QR payload. Phones that scan

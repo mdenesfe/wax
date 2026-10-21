@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/proto/waserversync"
-	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
+	"github.com/mdenesfe/wax/proto/waserversync"
+	"github.com/mdenesfe/wax/proto/wasyncaction"
 )
 
 // Values below were computed independently (RFC 5869 HKDF written by hand

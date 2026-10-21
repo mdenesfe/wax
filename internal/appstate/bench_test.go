@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mdenesfe/wax/internal/proto/waserversync"
+	"github.com/mdenesfe/wax/proto/waserversync"
 )
 
 // benchSnapshot builds a snapshot of n mute records (real accounts have a

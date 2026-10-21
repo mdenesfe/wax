@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wa6"
+	"github.com/mdenesfe/wax/proto/wa6"
 )
 
 // DefaultHandshakeTimeout bounds the whole handshake. The server answers

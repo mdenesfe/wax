@@ -12,13 +12,13 @@ import (
 
 	"github.com/mdenesfe/wax/internal/appstate"
 	"github.com/mdenesfe/wax/internal/media"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
-	"github.com/mdenesfe/wax/internal/proto/wahistorysync"
-	"github.com/mdenesfe/wax/internal/proto/waserversync"
-	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
+	"github.com/mdenesfe/wax/proto/wahistorysync"
+	"github.com/mdenesfe/wax/proto/waserversync"
+	"github.com/mdenesfe/wax/proto/wasyncaction"
 )
 
 // syncServer plays WhatsApp's app state endpoints and our phone.

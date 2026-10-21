@@ -12,12 +12,12 @@ import (
 
 	"github.com/mdenesfe/wax/internal/appstate"
 	"github.com/mdenesfe/wax/internal/media"
-	"github.com/mdenesfe/wax/internal/proto/wae2e"
-	"github.com/mdenesfe/wax/internal/proto/waserversync"
-	"github.com/mdenesfe/wax/internal/proto/wasyncaction"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/internal/wabin"
+	"github.com/mdenesfe/wax/proto/wae2e"
+	"github.com/mdenesfe/wax/proto/waserversync"
+	"github.com/mdenesfe/wax/proto/wasyncaction"
 )
 
 // errMissingKeys means app state could not be decoded until the phone

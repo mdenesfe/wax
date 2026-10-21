@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/wacert"
+	"github.com/mdenesfe/wax/proto/wacert"
 )
 
 // WhatsAppRootKey is the Curve25519 public key of WhatsApp's Noise root

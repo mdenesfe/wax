@@ -1,6 +1,6 @@
 package client
 
-import "github.com/mdenesfe/wax/internal/proto/wae2e"
+import "github.com/mdenesfe/wax/proto/wae2e"
 
 // ContextOf returns the context info (reply, mentions, forwarding) of a
 // message's content, or nil.

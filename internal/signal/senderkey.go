@@ -11,8 +11,8 @@ import (
 
 	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
-	"github.com/mdenesfe/wax/internal/proto/signalstore"
-	"github.com/mdenesfe/wax/internal/proto/signalwire"
+	"github.com/mdenesfe/wax/proto/signalstore"
+	"github.com/mdenesfe/wax/proto/signalwire"
 )
 
 // Sender keys ("group sessions"): each member has one symmetric hash chain
