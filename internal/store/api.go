@@ -468,7 +468,7 @@ func (s *Store) Identities(ctx context.Context, instance string, jids []string) 
 // from either of the contact's addresses.
 func (s *Store) ListChats(ctx context.Context, instance string, limit, offset int) ([]Chat, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT c.jid, COALESCE(NULLIF(c.name, ''), ct.full_name), ct.push_name, ct.username,
+		SELECT c.jid, c.name, COALESCE(ct.full_name, ''), ct.push_name, ct.username,
 		       c.last_message_at, c.unread_count, c.archived, c.pinned, c.muted_until, COALESCE(p.phone, ''),
 		       lm.message_id, lm.sender, lm.from_me, lm.sent_at, lm.push_name, lm.type, lm.content, lm.source, lm.edited_at
 		FROM wax_chats c`+fmt.Sprintf(identityJoin, "c.jid", "c.instance_id")+`
@@ -488,8 +488,14 @@ func (s *Store) ListChats(ctx context.Context, instance string, limit, offset in
 		var fromMe *bool
 		var sentAt, editedAt *time.Time
 		var enc []byte
-		err := r.Scan(&c.JID, &c.Name, &c.PushName, &c.Username, &c.LastMessageAt, &c.UnreadCount, &c.Archived, &c.Pinned, &c.MutedUntil, &c.Phone,
+		var fullName string
+		err := r.Scan(&c.JID, &c.Name, &fullName, &c.PushName, &c.Username, &c.LastMessageAt, &c.UnreadCount, &c.Archived, &c.Pinned, &c.MutedUntil, &c.Phone,
 			&id, &sender, &fromMe, &sentAt, &pushName, &typ, &enc, &source, &editedAt)
+		// The chat's own name, else the address book's; a masked number
+		// is not a name.
+		if c.Name, c.MaskedPhone = splitMaskedPhone(c.Name); c.Name == "" {
+			c.Name = fullName
+		}
 		if err != nil || id == nil {
 			return c, err
 		}
@@ -527,6 +533,9 @@ func mergeAliases(chats []Chat) []Chat {
 		m.Pinned = m.Pinned || c.Pinned
 		if m.Name == "" {
 			m.Name = c.Name
+		}
+		if m.MaskedPhone == "" {
+			m.MaskedPhone = c.MaskedPhone
 		}
 	}
 	return out

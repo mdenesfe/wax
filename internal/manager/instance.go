@@ -233,9 +233,28 @@ func (in *Instance) onEvent(e client.Event) {
 		in.setStatus(StatusConnecting)
 	}
 	name, data, ok := toWebhook(in.Name, e)
-	if ok {
-		in.emitWebhook(name, data)
+	if !ok {
+		return
 	}
+	if m, isMsg := data.(MessageJSON); isMsg {
+		data = in.resolveMessage(m)
+	}
+	in.emitWebhook(name, data)
+}
+
+// resolveTimeout bounds the lookup that completes a message webhook.
+const resolveTimeout = 2 * time.Second
+
+// resolveMessage adds what is stored about the message's people (phone
+// numbers, names, other addresses), as message listings show them. A
+// failed lookup only leaves those fields empty.
+func (in *Instance) resolveMessage(m MessageJSON) MessageJSON {
+	ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
+	defer cancel()
+	if err := ResolvePeople(ctx, in.m.store, in.ID, []*MessageJSON{&m}); err != nil {
+		in.log.Warn("could not resolve the people of a message", "error", err)
+	}
+	return m
 }
 
 // webhookEnqueueTimeout bounds the database write of one webhook event.

@@ -4726,7 +4726,7 @@
     },
     "chat_update": {
       "post": {
-        "summary": "A chat was archived, pinned or marked read (or the reverse)",
+        "summary": "A chat was archived, pinned, muted or marked read (or the reverse)",
         "parameters": [
           {
             "name": "X-Wax-Signature",
@@ -5257,6 +5257,10 @@
           "username": {
             "type": "string",
             "description": "The contact's WhatsApp username, without \"@\" (1:1 chats)."
+          },
+          "masked_phone": {
+            "type": "string",
+            "description": "For a contact who hides their number: the partly hidden number WhatsApp shows (e.g. +90∙∙∙∙∙∙∙∙02). WhatsApp gives it in place of a name; name is then the address book name or empty."
           }
         },
         "additionalProperties": false,
@@ -5277,13 +5281,17 @@
             "type": "string",
             "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
           },
+          "chat_alt": {
+            "type": "string",
+            "description": "A 1:1 chat's other address (the phone number JID for a LID chat and the reverse), when known."
+          },
           "sender": {
             "type": "string",
             "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
           },
           "sender_alt": {
             "type": "string",
-            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+            "description": "The sender's other address (phone number JID for a LID and the reverse): from the message, else from the stored LID mapping."
           },
           "from_me": {
             "type": "boolean"
@@ -5943,7 +5951,7 @@
       },
       "ChatUpdate": {
         "type": "object",
-        "description": "A chat's archive, pin or read state as the phone set it. Only the settings the change carries are present.",
+        "description": "A chat's archive, pin, mute or read state as the phone set it. Only the settings the change carries are present.",
         "properties": {
           "chat": {
             "type": "string",
@@ -5962,6 +5970,15 @@
           "read": {
             "type": "boolean",
             "description": "true: marked read; false: marked unread."
+          },
+          "muted": {
+            "type": "boolean",
+            "description": "Set for a mute change."
+          },
+          "muted_until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the mute (year 9999: always); absent when unmuted."
           },
           "timestamp": {
             "type": "string",

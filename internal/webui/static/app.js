@@ -496,13 +496,13 @@ const MEDIA = { image: ["image", "Photo"], video: ["video", "Video"], audio: ["m
 
 // People are shown like WhatsApp does: the address book name; otherwise
 // the number, the "~push name" they chose, or their @username.
-const chatTitle = (c) => c.name || fmtPhone(c.phone) || (c.push_name && "~" + c.push_name) || (c.username && "@" + c.username) || chatKind(c.jid);
+const chatTitle = (c) => c.name || fmtPhone(c.phone) || (c.push_name && "~" + c.push_name) || (c.username && "@" + c.username) || c.masked_phone || chatKind(c.jid);
 
 // chatSubtitle: what the title does not already say about a contact.
 function chatSubtitle(c) {
   if (c.jid.endsWith("@g.us")) return "Group";
   const title = chatTitle(c);
-  return [fmtPhone(c.phone), c.push_name && "~" + c.push_name, c.username && "@" + c.username]
+  return [fmtPhone(c.phone) || c.masked_phone, c.push_name && "~" + c.push_name, c.username && "@" + c.username]
     .filter((x) => x && x !== title).join(" · ");
 }
 

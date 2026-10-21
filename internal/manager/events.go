@@ -22,8 +22,11 @@ type Envelope struct {
 
 // MessageJSON is the webhook/API representation of a message.
 type MessageJSON struct {
-	ID        string `json:"id"`
-	Chat      string `json:"chat"`
+	ID   string `json:"id"`
+	Chat string `json:"chat"`
+	// ChatAlt is a 1:1 chat's other address (the phone number JID for a
+	// LID chat and the reverse), when known.
+	ChatAlt   string `json:"chat_alt,omitempty"`
 	Sender    string `json:"sender,omitempty"`
 	SenderAlt string `json:"sender_alt,omitempty"`
 	// SenderPhone, SenderName (address book) and SenderUsername describe
@@ -217,12 +220,16 @@ func jidStr(j wabin.JID) string {
 // ChatUpdateJSON is the data of a chat_update webhook: only the settings
 // the change carries are present.
 type ChatUpdateJSON struct {
-	Chat     string     `json:"chat"`
-	ChatAlt  string     `json:"chat_alt,omitempty"`
-	Archived *bool      `json:"archived,omitempty"`
-	Pinned   *bool      `json:"pinned,omitempty"`
-	Read     *bool      `json:"read,omitempty"`
-	At       *time.Time `json:"timestamp,omitempty"`
+	Chat     string `json:"chat"`
+	ChatAlt  string `json:"chat_alt,omitempty"`
+	Archived *bool  `json:"archived,omitempty"`
+	Pinned   *bool  `json:"pinned,omitempty"`
+	Read     *bool  `json:"read,omitempty"`
+	// Muted is set for a mute change; MutedUntil is the end of the mute
+	// (year 9999: always), absent when unmuted.
+	Muted      *bool      `json:"muted,omitempty"`
+	MutedUntil *time.Time `json:"muted_until,omitempty"`
+	At         *time.Time `json:"timestamp,omitempty"`
 	// Source is "app_state" (a change on the phone, or the full sync
 	// after linking: then FullSync is true) or "history" (history sync).
 	Source   string `json:"source"`
@@ -231,7 +238,7 @@ type ChatUpdateJSON struct {
 
 func describeChatUpdate(e client.ChatUpdate) ChatUpdateJSON {
 	out := ChatUpdateJSON{Chat: jidStr(e.Chat), ChatAlt: jidStr(e.ChatAlt), Archived: e.Archived, Pinned: e.Pinned, Read: e.Read,
-		Source: "app_state", FullSync: e.FromFullSync}
+		Muted: e.Muted, MutedUntil: e.MutedUntil, Source: "app_state", FullSync: e.FromFullSync}
 	if e.FromHistory {
 		out.Source = "history"
 	}

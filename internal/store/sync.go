@@ -200,15 +200,16 @@ func (s *Store) UpdateChat(ctx context.Context, instanceID, jid string, u ChatUp
 	return nil
 }
 
-// ChatState is a chat's archive and pin state.
+// ChatState is a chat's archive, pin and mute state.
 type ChatState struct {
 	Archived, Pinned bool
+	MutedUntil       *time.Time // nil: not muted
 }
 
-// ChatStates returns the archive and pin state of the given chats (chats
-// that are not stored are absent).
+// ChatStates returns the archive, pin and mute state of the given chats
+// (chats that are not stored are absent).
 func (s *Store) ChatStates(ctx context.Context, instanceID string, jids []string) (map[string]ChatState, error) {
-	rows, err := s.db.Query(ctx, `SELECT jid, archived, pinned FROM wax_chats WHERE instance_id = $1 AND jid = ANY($2)`, instanceID, jids)
+	rows, err := s.db.Query(ctx, `SELECT jid, archived, pinned, muted_until FROM wax_chats WHERE instance_id = $1 AND jid = ANY($2)`, instanceID, jids)
 	if err != nil {
 		return nil, fmt.Errorf("store: chat states: %w", err)
 	}
@@ -217,7 +218,7 @@ func (s *Store) ChatStates(ctx context.Context, instanceID string, jids []string
 	for rows.Next() {
 		var jid string
 		var st ChatState
-		if err := rows.Scan(&jid, &st.Archived, &st.Pinned); err != nil {
+		if err := rows.Scan(&jid, &st.Archived, &st.Pinned, &st.MutedUntil); err != nil {
 			return nil, fmt.Errorf("store: chat states: %w", err)
 		}
 		out[jid] = st
@@ -460,6 +461,10 @@ type Chat struct {
 	// WhatsApp username (without "@") of a 1:1 chat, if known.
 	PushName string `json:"push_name,omitempty"`
 	Username string `json:"username,omitempty"`
+	// MaskedPhone is the partly hidden number WhatsApp shows for a contact
+	// who hides their number (for example "+90∙∙∙∙∙∙∙∙02"). WhatsApp gives
+	// it in place of a chat name; it is never used as Name.
+	MaskedPhone string `json:"masked_phone,omitempty"`
 	// Last is the newest message worth showing in a chat list (protocol
 	// and reaction messages are skipped); only ListChats fills it.
 	Last *StoredMessage `json:"-"`
@@ -470,7 +475,33 @@ const chatColumns = `jid, name, last_message_at, unread_count, archived, pinned,
 func scanChat(row pgx.Row) (*Chat, error) {
 	var c Chat
 	err := row.Scan(&c.JID, &c.Name, &c.LastMessageAt, &c.UnreadCount, &c.Archived, &c.Pinned, &c.MutedUntil)
+	c.Name, c.MaskedPhone = splitMaskedPhone(c.Name)
 	return &c, err
+}
+
+// maskRunes are the characters WhatsApp puts in place of hidden digits.
+const maskRunes = "\u2219\u2022\u00b7*"
+
+// splitMaskedPhone separates a masked phone number given as a chat name
+// ("+90∙∙∙∙∙∙∙∙02": only digits, '+', spaces and at least two mask
+// characters) from a real name.
+func splitMaskedPhone(name string) (real, masked string) {
+	masks, digits := 0, 0
+	for _, r := range name {
+		switch {
+		case strings.ContainsRune(maskRunes, r):
+			masks++
+		case r >= '0' && r <= '9':
+			digits++
+		case r == '+' || r == ' ' || r == '-':
+		default:
+			return name, ""
+		}
+	}
+	if masks < 2 || digits == 0 {
+		return name, ""
+	}
+	return "", name
 }
 
 // GetChat returns a chat, or ErrNotFound.

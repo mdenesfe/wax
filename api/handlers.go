@@ -521,57 +521,10 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request, in *manage
 	writeJSON(w, http.StatusOK, out)
 }
 
-// resolveSenders fills in what is known (phone number, address book
-// name, push name, username) about the people in messages: other senders,
-// quoted authors, mentioned users and users in system messages, with one
-// lookup for all of them.
+// resolveSenders fills in what is known about the people in messages
+// (see manager.ResolvePeople).
 func (s *Server) resolveSenders(ctx context.Context, instance string, msgs []*manager.MessageJSON) error {
-	var people []*manager.PersonJSON
-	var jids []string
-	seen := make(map[string]bool)
-	add := func(p *manager.PersonJSON) {
-		p.JID = nonAD(p.JID)
-		people = append(people, p)
-		if !seen[p.JID] {
-			seen[p.JID] = true
-			jids = append(jids, p.JID)
-		}
-	}
-	senders := make([]manager.PersonJSON, len(msgs))
-	for i, m := range msgs {
-		if m.Sender != "" && !m.FromMe {
-			senders[i].JID = m.Sender
-			add(&senders[i])
-		}
-		if m.Quoted != nil && m.Quoted.Sender != nil {
-			add(m.Quoted.Sender)
-		}
-		for j := range m.Mentions {
-			add(&m.Mentions[j])
-		}
-		if m.Stub != nil {
-			for j := range m.Stub.People {
-				add(&m.Stub.People[j])
-			}
-		}
-	}
-	ids, err := s.store.Identities(ctx, instance, jids)
-	if err != nil {
-		return err
-	}
-	for _, p := range people {
-		id := ids[p.JID]
-		p.Phone, p.Name, p.PushName, p.Username = id.Phone, id.Name, id.PushName, id.Username
-	}
-	for i, m := range msgs {
-		if p := senders[i]; p.JID != "" {
-			m.SenderPhone, m.SenderName, m.SenderUsername = p.Phone, p.Name, p.Username
-			if m.PushName == "" {
-				m.PushName = p.PushName
-			}
-		}
-	}
-	return nil
+	return manager.ResolvePeople(ctx, s.store, instance, msgs)
 }
 
 // nonAD drops the device part of a user JID ("1234:5@lid" -> "1234@lid").

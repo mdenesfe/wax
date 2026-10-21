@@ -140,8 +140,8 @@ type AppStateChange struct {
 	FromFullSync bool
 }
 
-// ChatUpdate reports a chat's archive, pin or read state as the phone set
-// it: from app state (live, or a full sync after linking) or from history
+// ChatUpdate reports a chat's archive, pin, mute or read state as the
+// phone set it: from app state (live, or a full sync after linking) or from history
 // sync. Only the fields that the change carries are set. Chat is the chat
 // as WhatsApp names it (a phone number or LID JID); ChatAlt is its other
 // address, when known.
@@ -150,8 +150,12 @@ type ChatUpdate struct {
 	Archived, Pinned *bool
 	// Read is true when the chat was marked read, false when it was
 	// marked unread.
-	Read      *bool
-	Timestamp time.Time
+	Read *bool
+	// Muted is set for a mute change; MutedUntil is then the end of the
+	// mute (year 9999: always), nil when unmuted.
+	Muted      *bool
+	MutedUntil *time.Time
+	Timestamp  time.Time
 	// FromHistory marks values from history sync (the state when the
 	// account was linked); FromFullSync values from a full app state sync.
 	FromHistory, FromFullSync bool

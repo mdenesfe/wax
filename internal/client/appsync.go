@@ -239,7 +239,8 @@ func (c *Client) applyAppState(ctx context.Context, s *session, collection strin
 	return res.State, nil
 }
 
-// chatUpdate describes an archive, pin or read mutation as a ChatUpdate.
+// chatUpdate describes an archive, pin, mute or read mutation as a
+// ChatUpdate.
 func (c *Client) chatUpdate(ctx context.Context, m *appstate.Mutation, removed bool) (ChatUpdate, bool) {
 	if removed || m.Action == nil || len(m.Index) < 2 {
 		return ChatUpdate{}, false
@@ -260,6 +261,14 @@ func (c *Client) chatUpdate(ctx context.Context, m *appstate.Mutation, removed b
 	case "markChatAsRead":
 		v := a.GetMarkChatAsReadAction().GetRead()
 		u.Read = &v
+	case "mute":
+		until := muteUntil(a.GetMuteAction())
+		muted := !until.IsZero()
+		u.Muted = &muted
+		if muted {
+			until = until.UTC()
+			u.MutedUntil = &until
+		}
 	default:
 		return ChatUpdate{}, false
 	}

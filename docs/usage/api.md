@@ -381,6 +381,11 @@ curl "$WAX/v1/instances/main/chats?limit=50&offset=0" -H "Authorization: Bearer 
 `phone`, `push_name`, `username`, `unread_count`, `archived`, `pinned`,
 `muted_until`, `last_message_at` and `last_message`.
 
+For a contact who hides their number, WhatsApp gives a partly hidden number
+(for example `+90∙∙∙∙∙∙∙∙02`) where the chat name would be. wax returns it
+as `masked_phone`, never as `name`; `name` is then the address book name,
+or empty.
+
 ```bash
 # Messages of a chat, newest first
 curl "$WAX/v1/instances/main/chats/905550000002@s.whatsapp.net/messages?limit=50" -H "Authorization: Bearer $WAX_KEY"

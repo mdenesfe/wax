@@ -123,16 +123,16 @@ func (s *session) processNextHistory() (bool, error) {
 	return true, err
 }
 
-// emitHistoryChatStates reports the archived and pinned chats of a stored
-// history chunk as ChatUpdate events. The values are read back from the
+// emitHistoryChatStates reports the archived, pinned and muted chats of a
+// stored history chunk as ChatUpdate events. The values are read back from the
 // database: a setting app state already changed is newer than the
 // history's and wins (see store.ChatUpdate.FromHistory). Chats that are
-// neither archived nor pinned are not reported; that is the default.
+// none of these are not reported; that is the default.
 func (s *session) emitHistoryChatStates(hs *wahistorysync.HistorySync) {
 	c := s.c
 	var jids []string
 	for _, conv := range hs.GetConversations() {
-		if conv.GetID() != "" && (conv.GetArchived() || conv.GetPinned() > 0) {
+		if conv.GetID() != "" && (conv.GetArchived() || conv.GetPinned() > 0 || conv.GetMuteEndTime() != 0) {
 			jids = append(jids, conv.GetID())
 		}
 	}
@@ -147,11 +147,16 @@ func (s *session) emitHistoryChatStates(hs *wahistorysync.HistorySync) {
 	for _, id := range jids {
 		st, ok := states[id]
 		chat, err := wabin.ParseJID(id)
-		if !ok || err != nil || (!st.Archived && !st.Pinned) {
+		muted := st.MutedUntil != nil && st.MutedUntil.After(time.Now())
+		if !ok || err != nil || (!st.Archived && !st.Pinned && !muted) {
 			continue
 		}
 		u := ChatUpdate{Chat: chat, ChatAlt: c.altAddress(s.ctx, chat), FromHistory: true}
-		u.Archived, u.Pinned = &st.Archived, &st.Pinned
+		u.Archived, u.Pinned, u.Muted = &st.Archived, &st.Pinned, &muted
+		if muted {
+			until := st.MutedUntil.UTC()
+			u.MutedUntil = &until
+		}
 		c.emit(u)
 	}
 }

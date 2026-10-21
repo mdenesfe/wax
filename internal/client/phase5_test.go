@@ -244,7 +244,11 @@ func TestAppStateAndHistorySync(t *testing.T) {
 	if name, _ := h.client.pushName.Load().(string); name != "Wax Test" {
 		t.Fatalf("push name %q", name)
 	}
-	// The archive setting is reported, as part of the full sync.
+	// The mute and archive settings are reported, as part of the full sync.
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Muted == nil || !*u.Muted || u.MutedUntil == nil || u.MutedUntil.Year() != 9999 ||
+		u.Archived != nil || !u.FromFullSync {
+		t.Fatalf("chat update for the mute %+v", u)
+	}
 	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Archived == nil || !*u.Archived || u.Pinned != nil || u.Read != nil ||
 		!u.FromFullSync || u.FromHistory || !u.Timestamp.Equal(time.UnixMilli(*ts)) {
 		t.Fatalf("chat update from the snapshot %+v", u)
@@ -280,6 +284,9 @@ func TestAppStateAndHistorySync(t *testing.T) {
 	}
 	if chat, _ := h.store.GetChat(h.ctx, h.inst, bobPN.String()); chat.MutedUntil != nil {
 		t.Fatalf("still muted until %v", chat.MutedUntil)
+	}
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Muted == nil || *u.Muted || u.MutedUntil != nil || u.FromFullSync {
+		t.Fatalf("chat update for the unmute %+v", u)
 	}
 	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Pinned == nil || !*u.Pinned || u.Archived != nil || u.FromFullSync {
 		t.Fatalf("chat update for the pin %+v", u)
