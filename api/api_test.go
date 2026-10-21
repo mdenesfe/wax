@@ -293,7 +293,7 @@ func TestAPIEndToEnd(t *testing.T) {
 	e.ok("POST", "/v1/instances/"+id+"/messages", map[string]any{"to": "abc"}, http.StatusBadRequest)
 	// Broadcast lists are not supported: the worker fails it permanently.
 	st, _ := e.hooks.wait(t, "send_status", next)
-	if st.Data.(map[string]any)["status"] != "failed" {
+	if d := st.Data.(map[string]any); d["status"] != "failed" || d["code"] != "invalid_recipient" {
 		t.Fatalf("send_status %+v", st)
 	}
 	var ob map[string]any

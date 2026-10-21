@@ -40,6 +40,8 @@ type Instance struct {
 	WebhookSecret []byte
 	RatePerMinute int
 	CreatedAt     time.Time
+	// Stopped instances run on no node (see SetInstanceStopped).
+	Stopped bool
 }
 
 // CreateInstance registers a new instance (ErrConflict if the id exists).
@@ -127,7 +129,7 @@ func (s *Store) InstanceByName(ctx context.Context, tenant, name string) (*Insta
 }
 
 func (s *Store) instancesWhere(ctx context.Context, where string, args ...any) ([]Instance, error) {
-	rows, err := s.db.Query(ctx, `SELECT id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute, created_at
+	rows, err := s.db.Query(ctx, `SELECT id, tenant_id, name, webhook_url, webhook_secret, rate_per_minute, created_at, stopped
 		FROM wax_instances WHERE `+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list instances: %w", err)
@@ -137,7 +139,7 @@ func (s *Store) instancesWhere(ctx context.Context, where string, args ...any) (
 	for rows.Next() {
 		var in Instance
 		var enc []byte
-		if err := rows.Scan(&in.ID, &in.TenantID, &in.Name, &in.WebhookURL, &enc, &in.RatePerMinute, &in.CreatedAt); err != nil {
+		if err := rows.Scan(&in.ID, &in.TenantID, &in.Name, &in.WebhookURL, &enc, &in.RatePerMinute, &in.CreatedAt, &in.Stopped); err != nil {
 			return nil, err
 		}
 		if enc != nil {
@@ -148,6 +150,20 @@ func (s *Store) instancesWhere(ctx context.Context, where string, args ...any) (
 		out = append(out, in)
 	}
 	return out, rows.Err()
+}
+
+// SetInstanceStopped stops an instance or lets it run again. A stopped
+// instance keeps its device, sessions and data, but no node takes its
+// lease, so it stays stopped across restarts.
+func (s *Store) SetInstanceStopped(ctx context.Context, id string, stopped bool) error {
+	tag, err := s.db.Exec(ctx, `UPDATE wax_instances SET stopped = $2 WHERE id = $1`, id, stopped)
+	if err != nil {
+		return fmt.Errorf("store: set instance stopped: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // DeleteInstance removes an instance and (via cascades) its device,

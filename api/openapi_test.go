@@ -97,6 +97,7 @@ func TestOpenAPIContract(t *testing.T) {
 		"WebhookEnvelope": manager.Envelope{}, "ForwardRequest": forwardRequest{},
 		"Person": manager.PersonJSON{}, "Quoted": manager.QuotedJSON{}, "Stub": manager.StubJSON{}, "GroupSummary": groupSummary{},
 		"Profile": profileJSON{}, "GroupRef": groupRef{}, "Business": client.Business{}, "BusinessHours": client.BusinessHours{},
+		"ChatUpdate": manager.ChatUpdateJSON{}, "PhoneCheckRequest": phoneCheckRequest{}, "PhoneCheck": phoneCheckJSON{},
 	}
 	for name, v := range types {
 		sch, ok := s.Comp.Schemas[name]

@@ -51,12 +51,37 @@ var errInvalidItem = errors.New("invalid outbox item")
 
 // permanent reports errors that retrying cannot fix.
 func permanent(err error) bool {
-	for _, target := range []error{errInvalidItem, wabin.ErrInvalidJID, client.ErrUnsupportedChat, client.ErrServerRejected, client.ErrNotOnWhatsApp} {
+	for _, target := range []error{errInvalidItem, wabin.ErrInvalidJID, client.ErrUnsupportedChat, client.ErrServerRejected, client.ErrNotOnWhatsApp, client.ErrNotSticker} {
 		if errors.Is(err, target) {
 			return true
 		}
 	}
 	return false
+}
+
+// Failure codes of a failed send (send_status "code"), for programs that
+// show their own message for each.
+const (
+	FailNotOnWhatsApp    = "not_on_whatsapp"   // the number has no WhatsApp account
+	FailInvalidRecipient = "invalid_recipient" // not a user or group JID, or a chat type that cannot be sent to (broadcast lists)
+	FailServerRejected   = "server_rejected"   // WhatsApp refused the message
+	FailInvalidMessage   = "invalid_message"   // the message cannot be built (for example a sticker that is not WebP)
+	FailRetriesExhausted = "retries_exhausted" // temporary errors until the outbox gave up
+)
+
+// failureCode classifies why a send finally failed.
+func failureCode(err error) string {
+	switch {
+	case errors.Is(err, client.ErrNotOnWhatsApp):
+		return FailNotOnWhatsApp
+	case errors.Is(err, wabin.ErrInvalidJID), errors.Is(err, client.ErrUnsupportedChat):
+		return FailInvalidRecipient
+	case errors.Is(err, client.ErrServerRejected):
+		return FailServerRejected
+	case errors.Is(err, errInvalidItem), errors.Is(err, client.ErrNotSticker):
+		return FailInvalidMessage
+	}
+	return FailRetriesExhausted
 }
 
 // outboxLoop sends this instance's queued messages in order, paced by the
@@ -128,7 +153,7 @@ func (in *Instance) sendOne(ctx context.Context, bucket *ratelimit.Bucket) time.
 		_ = st.MarkOutboxFailed(ctx, it.ID, err.Error())
 		in.log.Warn("message send failed", "outbox_id", it.ID, "error", err)
 		in.emitWebhook("send_status", map[string]any{"outbox_id": it.ID, "client_id": it.ClientID, "message_id": it.MessageID,
-			"chat": it.Chat, "status": "failed", "error": err.Error()})
+			"chat": it.Chat, "status": "failed", "code": failureCode(err), "error": err.Error()})
 	default:
 		delay := tm.OutboxRetry.Delay(it.Attempts + 1)
 		_ = st.MarkOutboxRetry(ctx, it.ID, time.Now().Add(delay), err.Error())

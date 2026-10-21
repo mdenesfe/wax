@@ -39,6 +39,10 @@ var (
 
 var idPattern = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
 
+// ValidID reports whether s is a valid tenant id or instance name: 1 to 64
+// characters of a-z, 0-9, '-' and '_'.
+func ValidID(s string) bool { return idPattern.MatchString(s) }
+
 // Config configures the Manager.
 type Config struct {
 	Store   *store.Store
@@ -339,7 +343,10 @@ func (m *Manager) Views(ctx context.Context, tenant, name string) ([]View, error
 	out := make([]View, len(rows))
 	for i, r := range rows {
 		v := View{Name: r.Name, Status: Status(r.Status), WebhookURL: r.WebhookURL, RatePerMinute: r.RatePerMinute, QRPending: r.QRPending}
-		if v.Status == "" {
+		switch {
+		case r.Stopped && v.Status == "":
+			v.Status = StatusStopped
+		case v.Status == "":
 			v.Status = StatusUnassigned
 		}
 		v.JID, _ = wabin.ParseJID(r.JID)
@@ -417,11 +424,55 @@ func (m *Manager) Delete(ctx context.Context, in *Instance) error {
 }
 
 // Connect asks an instance waiting here (QR timeout, replaced) to run
-// again. An instance no node runs is picked up by the next lease round.
-func (m *Manager) Connect(in *Instance) {
+// again. A stopped instance is started again (on this node, when it can
+// take the lease), without a new pairing. Any other instance no node runs
+// is picked up by the next lease round.
+func (m *Manager) Connect(ctx context.Context, in *Instance) error {
 	if in.running {
 		kick(in.connect)
+		return nil
 	}
+	if !in.Config().Stopped {
+		return nil
+	}
+	if err := m.store.SetInstanceStopped(ctx, in.ID, false); err != nil {
+		return err
+	}
+	in.log.Info("instance resumed")
+	ids, err := m.store.AcquireLeases(ctx, m.cfg.NodeID, m.cfg.Address, m.cfg.Timing.LeaseTTL, 1, in.ID)
+	if err != nil || len(ids) == 0 {
+		return nil // the next lease round starts it somewhere
+	}
+	cfg := in.Config()
+	cfg.Stopped = false
+	m.met.lease.Inc("acquired")
+	_, err = m.run(cfg)
+	return err
+}
+
+// StopInstance stops an instance without unlinking it: the device, its
+// sessions and data stay, and no node runs it (also after restarts) until
+// Connect. Requests for an instance running on another node are forwarded
+// there by the API first.
+func (m *Manager) StopInstance(ctx context.Context, in *Instance) error {
+	if err := m.store.SetInstanceStopped(ctx, in.ID, true); err != nil {
+		return err
+	}
+	if in.running {
+		m.mu.Lock()
+		delete(m.instances, in.ID)
+		m.mu.Unlock()
+		in.stop()
+		if err := m.store.ReleaseLeases(ctx, m.cfg.NodeID, []string{in.ID}); err != nil {
+			in.log.Warn("could not release the lease of a stopped instance; it expires on its own", "error", err)
+		}
+	}
+	in.cfgMu.Lock()
+	in.cfg.Stopped = true
+	in.cfgMu.Unlock()
+	in.setStatus(StatusStopped)
+	in.log.Info("instance stopped")
+	return nil
 }
 
 // recoverLoop logs a panic in an instance background loop; the loop's

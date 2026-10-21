@@ -1262,7 +1262,7 @@
     },
     "/v1/instances/{id}/connect": {
       "post": {
-        "summary": "Start a new pairing / reconnect",
+        "summary": "Start a new pairing, reconnect, or resume a stopped instance",
         "security": [
           {
             "tenantKey": []
@@ -1353,7 +1353,105 @@
         ],
         "tags": [
           "instances"
-        ]
+        ],
+        "description": "After qr_timeout or replaced: start again. A stopped instance runs again with its stored session, without a new QR code."
+      }
+    },
+    "/v1/instances/{id}/stop": {
+      "post": {
+        "summary": "Stop without unlinking",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Stopped."
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit; see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "tags": [
+          "instances"
+        ],
+        "description": "The instance stops and runs on no node, also after restarts, until POST /v1/instances/{id}/connect. The device stays linked and its data is kept. Messages sent meanwhile are queued, and webhook events wait. Status: stopped."
       }
     },
     "/v1/instances/{id}/qr": {
@@ -2324,6 +2422,133 @@
         ]
       }
     },
+    "/v1/instances/{id}/contacts/check": {
+      "post": {
+        "summary": "Check which phone numbers have a WhatsApp account",
+        "security": [
+          {
+            "tenantKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One result per number, in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PhoneCheck"
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "WhatsApp failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such instance in this tenant.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Instance not connected or not running on any node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong key type, or quota reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Tenant rate limit, or WhatsApp's rate limit for lookups (error text says which); see Retry-After.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Instance name."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PhoneCheckRequest"
+              }
+            }
+          }
+        },
+        "tags": [
+          "instances"
+        ],
+        "description": "The same check a send makes: a number is on WhatsApp when the server returns its LID. Numbers whose LID is already known are answered without asking WhatsApp. Checks run one at a time; when WhatsApp asks to slow down the request fails with 429 (Retry-After: 60) and further checks fail for a minute without asking."
+      }
+    },
     "/v1/instances/{id}/groups/{group}": {
       "get": {
         "summary": "Group metadata",
@@ -3196,6 +3421,17 @@
                           "timestamp": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "not_on_whatsapp",
+                              "invalid_recipient",
+                              "server_rejected",
+                              "invalid_message",
+                              "retries_exhausted"
+                            ],
+                            "description": "Why the send failed (status failed only): not_on_whatsapp, the number has no account; invalid_recipient, not a user or group JID or a chat type that cannot be sent to; server_rejected, WhatsApp refused it; invalid_message, the message cannot be built; retries_exhausted, temporary errors until the outbox gave up. error has the details."
                           },
                           "error": {
                             "type": "string"
@@ -4487,6 +4723,69 @@
           }
         }
       }
+    },
+    "chat_update": {
+      "post": {
+        "summary": "A chat was archived, pinned or marked read (or the reverse)",
+        "parameters": [
+          {
+            "name": "X-Wax-Signature",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "sha256=<hex HMAC-SHA256(webhook_secret, body)>; absent without a secret."
+          },
+          {
+            "name": "X-Wax-Event",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Wax-Delivery",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique per event; retries reuse it."
+          },
+          {
+            "name": "X-Wax-Instance",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookEnvelope"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "data": {
+                        "$ref": "#/components/schemas/ChatUpdate"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Accepted. Anything else is retried with backoff for about a day, in order."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4790,9 +5089,10 @@
               "video",
               "audio",
               "voice",
-              "document"
+              "document",
+              "sticker"
             ],
-            "description": "Default: from the MIME type. Voice notes must be Ogg Opus; WebM Opus (what browsers record) is converted."
+            "description": "Default: from the MIME type. Voice notes must be Ogg Opus; WebM Opus (what browsers record) is converted. A sticker is a WebP image (static or animated), without caption; its size is read from the file."
           },
           "mimetype": {
             "type": "string"
@@ -5638,6 +5938,94 @@
           "messages",
           "live",
           "about_hidden"
+        ],
+        "additionalProperties": false
+      },
+      "ChatUpdate": {
+        "type": "object",
+        "description": "A chat's archive, pin or read state as the phone set it. Only the settings the change carries are present.",
+        "properties": {
+          "chat": {
+            "type": "string",
+            "description": "WhatsApp JID, e.g. 905551234567@s.whatsapp.net, 123@lid or 1203630...@g.us"
+          },
+          "chat_alt": {
+            "type": "string",
+            "description": "The chat's other address (LID for a phone number JID and the reverse), when known."
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "read": {
+            "type": "boolean",
+            "description": "true: marked read; false: marked unread."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the change was made on the phone (app state only)."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "app_state",
+              "history"
+            ],
+            "description": "app_state: a change on the phone, or the full sync after linking (full_sync true). history: the state in history sync; only archived or pinned chats are reported."
+          },
+          "full_sync": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chat",
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "PhoneCheckRequest": {
+        "type": "object",
+        "properties": {
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Phone numbers in international format (digits, optional leading +)."
+          }
+        },
+        "required": [
+          "phones"
+        ],
+        "additionalProperties": false
+      },
+      "PhoneCheck": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "The number as asked, digits only."
+          },
+          "on_whatsapp": {
+            "type": "boolean"
+          },
+          "jid": {
+            "type": "string",
+            "description": "The number's JID; only when on_whatsapp."
+          },
+          "lid": {
+            "type": "string",
+            "description": "Its LID; only when on_whatsapp."
+          }
+        },
+        "required": [
+          "phone",
+          "on_whatsapp"
         ],
         "additionalProperties": false
       }

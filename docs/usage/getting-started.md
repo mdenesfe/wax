@@ -41,6 +41,10 @@ WAX_API_KEY=<output of: openssl rand -hex 32>
 (`.env.example` also lists `WAX_TEST_DATABASE_URL`, which only the test
 suite reads.)
 
+Optionally, `WAX_TENANTS` sets up tenants and their keys at start, so step 5
+below needs no API calls; see
+[operations.md](operations.md#provisioning-tenants-from-the-environment).
+
 `WAX_MASTER_KEY` has no default: wax refuses to start without a valid one.
 
 > **Keep `WAX_MASTER_KEY` safe and separate from database backups.** Without

@@ -45,6 +45,17 @@ type outboxJSON struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
+type phoneCheckRequest struct {
+	Phones []string `json:"phones"`
+}
+
+type phoneCheckJSON struct {
+	Phone      string `json:"phone"`
+	OnWhatsApp bool   `json:"on_whatsapp"`
+	JID        string `json:"jid,omitempty"`
+	LID        string `json:"lid,omitempty"`
+}
+
 type markReadRequest struct {
 	Chat   string   `json:"chat"`
 	Sender string   `json:"sender"`

@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/mdenesfe/wax/api"
 	"github.com/mdenesfe/wax/internal/manager"
@@ -74,6 +76,9 @@ func serve(ctx context.Context, log *slog.Logger, o serveOptions) error {
 	}
 	defer st.Close()
 	log.Info("database connected", "pool_max_conns", st.PoolSize())
+	if err := provisionTenants(ctx, log, st, os.Getenv("WAX_TENANTS")); err != nil {
+		return err
+	}
 
 	version, err := resolveVersion(ctx, log, o.version, o.checkVersion)
 	if err != nil {
@@ -149,4 +154,30 @@ func openStore(ctx context.Context) (*store.Store, error) {
 		dsn = defaultDSN
 	}
 	return store.Open(ctx, dsn, masterKey)
+}
+
+// provisionTenants sets up the tenants and keys of WAX_TENANTS
+// ("tenant:key" entries separated by commas, spaces or newlines), so a
+// deployment needs no manual API calls: a missing tenant is created and
+// the key registered. It is idempotent, and every node may run it.
+// Removing an entry later does not revoke its key (use the API).
+func provisionTenants(ctx context.Context, log *slog.Logger, st *store.Store, spec string) error {
+	for i, entry := range strings.FieldsFunc(spec, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		tenant, key, ok := strings.Cut(entry, ":")
+		if !ok || !manager.ValidID(tenant) {
+			// The entry is not quoted: it may contain a key.
+			return fmt.Errorf("WAX_TENANTS: entry %d is not tenant:key (tenant: 1-64 of a-z, 0-9, - and _)", i+1)
+		}
+		if err := st.EnsureTenantKey(ctx, tenant, key); err != nil {
+			return fmt.Errorf("WAX_TENANTS: tenant %s: %w", tenant, err)
+		}
+		log.Info("tenant key provisioned", "tenant", tenant, "key", keyID(key))
+	}
+	return nil
+}
+
+// keyID is the public part of a tenant key (wax_<id>_...), for logs.
+func keyID(key string) string {
+	id, _, _ := strings.Cut(strings.TrimPrefix(key, "wax_"), "_")
+	return id
 }

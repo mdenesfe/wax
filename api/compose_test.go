@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/mdenesfe/wax/internal/client"
 	"github.com/mdenesfe/wax/internal/manager"
 	"github.com/mdenesfe/wax/internal/store"
 	"github.com/mdenesfe/wax/proto/wae2e"
@@ -139,4 +140,18 @@ func TestMediaPreviews(t *testing.T) {
 	}
 	e.ok("POST", "/v1/instances/media/messages", map[string]any{"to": "905551111111", "media": map[string]any{"kind": "voice",
 		"mimetype": "audio/webm", "data_base64": b64([]byte("not webm"))}}, http.StatusBadRequest)
+
+	// Stickers: WebP only, without caption; the MIME type is fixed.
+	webp, err := os.ReadFile("../internal/media/testdata/lossy.webp")
+	mustT(t, err)
+	sticker := queued(map[string]any{"kind": "sticker", "data_base64": b64(webp)})
+	if sticker.Kind != client.KindSticker || sticker.MimeType != "image/webp" || !bytes.Equal(sticker.Data, webp) {
+		t.Fatalf("sticker %s %s", sticker.Kind, sticker.MimeType)
+	}
+	for _, bad := range []map[string]any{
+		{"kind": "sticker", "mimetype": "image/jpeg", "data_base64": b64([]byte("jpeg"))},
+		{"kind": "sticker", "data_base64": b64(webp), "caption": "hi"},
+	} {
+		e.ok("POST", "/v1/instances/media/messages", map[string]any{"to": "905551111111", "media": bad}, http.StatusBadRequest)
+	}
 }

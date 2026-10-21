@@ -178,7 +178,8 @@ export WAX_KEY=wax_0123456789abcdef_<secret>
 | `GET /v1/instances/{id}` | Status of one instance |
 | `PATCH /v1/instances/{id}` | Change `webhook_url`, `webhook_secret` or `rate_per_minute`; absent fields keep their value |
 | `DELETE /v1/instances/{id}` | Unlink the device from the phone (best effort) and delete all of its data |
-| `POST /v1/instances/{id}/connect` | Start a new pairing or reconnect (after `qr_timeout` or `replaced`) |
+| `POST /v1/instances/{id}/connect` | Start a new pairing or reconnect (after `qr_timeout` or `replaced`); resume a stopped instance |
+| `POST /v1/instances/{id}/stop` | Stop without unlinking: the device and data stay, `connect` resumes without a QR code |
 
 Fields:
 
@@ -201,6 +202,16 @@ curl $WAX/v1/instances/main -H "Authorization: Bearer $WAX_KEY"
 
 Creating an instance beyond the tenant's quota returns `403`.
 
+**Stopping and deleting.** `POST /v1/instances/{id}/stop` (`204`) ends the
+connection but keeps everything: the device stays linked on the phone, and
+the keys, sessions and messages stay in the database. No node runs a
+stopped instance, also after restarts, until `POST /v1/instances/{id}/connect`
+starts it again with the stored session, without a QR code. Messages sent
+while it is stopped are queued and go out after it resumes; webhook events
+it queued wait as well. `DELETE` instead unlinks the device from the phone
+and deletes all data; it can unlink only a running instance, so to remove a
+stopped one completely, `connect` it first.
+
 **Statuses.**
 
 | Status | Meaning |
@@ -215,7 +226,7 @@ Creating an instance beyond the tenant's quota returns `403`.
 | `outdated` | WhatsApp rejected the client version; retried later. |
 | `banned` | Temporarily banned by WhatsApp; retried later. |
 | `failed` | Unexpected error; retried later. |
-| `stopped` | Stopped. |
+| `stopped` | Stopped through `POST /v1/instances/{id}/stop`; `connect` resumes it. |
 | `unassigned` | No node runs it at the moment (none alive, or all at capacity). |
 
 ## QR code
@@ -272,7 +283,7 @@ Sending to a group: use its JID as `to`, for example
 | Field | Notes |
 |---|---|
 | `data_base64` | Required. The file, standard base64. |
-| `kind` | `image`, `video`, `audio`, `voice` (voice note) or `document`. Default: derived from the MIME type. |
+| `kind` | `image`, `video`, `audio`, `voice` (voice note), `document` or `sticker`. Default: derived from the MIME type (a WebP image is sent as an image unless `kind` is `sticker`). |
 | `mimetype` | Default: detected from the content. |
 | `caption` | Shown under images, videos and documents. Put text here, not in `text`. |
 | `file_name` | File name shown for documents. |
@@ -283,6 +294,11 @@ Sending to a group: use its JID as `to`, for example
 
 The previews are optional; without them the message still arrives, but the
 recipient's chat shows less before downloading.
+
+A **sticker** is a WebP image (static or animated), sent with
+`"kind": "sticker"`; it has no caption or file name. wax reads its size and
+whether it is animated from the file, and refuses other formats with `400`.
+WhatsApp's own stickers are 512 by 512 pixels.
 
 ```bash
 curl -X POST $WAX/v1/instances/main/messages -H "Authorization: Bearer $WAX_KEY" -H "Content-Type: application/json" \
@@ -417,6 +433,28 @@ curl "$WAX/v1/instances/main/chats/120363000000000001@g.us/picture" -H "Authoriz
 Works for contacts and groups; `{chat}` may be a phone number or a JID.
 `404` when there is no picture or it is hidden by privacy settings. Needs a
 connected instance. Responses may be cached for an hour.
+
+## Checking phone numbers
+
+```bash
+curl -X POST $WAX/v1/instances/main/contacts/check -H "Authorization: Bearer $WAX_KEY" -H "Content-Type: application/json" \
+  -d '{"phones": ["905550000002", "+905550000003"]}'
+# [{"phone":"905550000002","on_whatsapp":true,"jid":"905550000002@s.whatsapp.net","lid":"123456789012345@lid"},
+#  {"phone":"905550000003","on_whatsapp":false}]
+```
+
+Up to 50 numbers per request; one result per number, in order. It is the
+same check a send makes: a number is on WhatsApp when the server returns
+its LID. Numbers whose LID is already known are answered without asking
+WhatsApp. The account must be connected (`503` otherwise).
+
+Checks run one at a time and share the limit of contact profile lookups.
+When WhatsApp asks to slow down, the request fails with `429`,
+`Retry-After: 60` and the error `rate limited by WhatsApp: try again in a
+minute`, and further checks fail the same way for a minute without asking
+WhatsApp. Check numbers when you need them (for example before starting a
+new chat), not in bulk: sending to a number that is not on WhatsApp fails
+on its own with the code `not_on_whatsapp`.
 
 ## Contact profiles
 

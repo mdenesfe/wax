@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"time"
 
@@ -287,4 +288,55 @@ func parseBundle(n *wabin.Node) (*signal.PreKeyBundle, error) {
 		b.PreKeyID, b.PreKey = &pid, [32]byte(val)
 	}
 	return b, nil
+}
+
+// PhoneCheck is whether a phone number has a WhatsApp account.
+type PhoneCheck struct {
+	Phone      string    // the number as asked (digits)
+	OnWhatsApp bool      // false: WhatsApp knows no account for it
+	JID        wabin.JID // the number's JID (on WhatsApp only)
+	LID        wabin.JID // its LID (on WhatsApp only)
+}
+
+// CheckPhone reports whether a phone number (digits, international
+// format) has a WhatsApp account. It is the check a send makes before
+// encrypting: an account is one the server returns a LID for. A number
+// whose LID is already stored needs no query. Lookups run one at a time
+// and share the profile lookups' limit: after WhatsApp asks to slow down,
+// ErrRateLimited is returned for a minute without asking it.
+func (c *Client) CheckPhone(ctx context.Context, phone string) (PhoneCheck, error) {
+	pn, err := wabin.ParseRecipient(phone)
+	if err != nil || pn.Server != wabin.ServerUser {
+		return PhoneCheck{}, fmt.Errorf("%w: not a phone number", wabin.ErrInvalidJID)
+	}
+	out := PhoneCheck{Phone: pn.User}
+	if known, err := c.cfg.Store.LIDForPN(ctx, c.cfg.InstanceID, pn.User); err == nil && known != "" {
+		out.OnWhatsApp, out.JID, out.LID = true, pn, wabin.JID{User: known, Server: wabin.ServerLID}
+		return out, nil
+	}
+	s, err := c.activeSession()
+	if err != nil {
+		return out, err
+	}
+	select {
+	case c.profileSlot <- struct{}{}:
+		defer func() { <-c.profileSlot }()
+	case <-ctx.Done():
+		return out, ctx.Err()
+	}
+	if time.Now().UnixNano() < c.profileHoldUntil.Load() {
+		return out, ErrRateLimited
+	}
+	lid, err := c.resolveLID(ctx, s, pn)
+	switch iqErr := (*IQError)(nil); {
+	case errors.As(err, &iqErr) && iqErr.Code == "429":
+		c.profileHoldUntil.Store(time.Now().Add(profileHold).UnixNano())
+		return out, ErrRateLimited
+	case errors.Is(err, ErrNotOnWhatsApp):
+		return out, nil
+	case err != nil:
+		return out, err
+	}
+	out.OnWhatsApp, out.JID, out.LID = true, pn, lid
+	return out, nil
 }

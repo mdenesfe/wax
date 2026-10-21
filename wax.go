@@ -93,6 +93,7 @@ type (
 	ChatPresence         = client.ChatPresence         // typing or recording in a chat
 	CallEvent            = client.CallEvent            // an incoming call offer or its end
 	AppStateChange       = client.AppStateChange       // a setting synced from the phone (mute, pin, contact, ...)
+	ChatUpdate           = client.ChatUpdate           // a chat was archived, pinned or marked read on the phone
 	AppStateSyncComplete = client.AppStateSyncComplete // a settings collection is up to date
 	AppStateUnverified   = client.AppStateUnverified   // a settings collection could not be fully verified
 	AppStateSyncError    = client.AppStateSyncError    // a settings collection failed to sync
@@ -108,6 +109,7 @@ type (
 	GroupInfo        = client.GroupInfo
 	GroupParticipant = client.GroupParticipant
 	UserProfile      = client.UserProfile
+	PhoneCheck       = client.PhoneCheck
 	Business         = client.Business
 	BusinessHours    = client.BusinessHours
 	Picture          = client.Picture
@@ -120,6 +122,7 @@ const (
 	KindAudio     = client.KindAudio
 	KindVoiceNote = client.KindVoiceNote // Ogg Opus
 	KindDocument  = client.KindDocument
+	KindSticker   = client.KindSticker // WebP
 )
 
 // Errors. Run returns ErrLoggedOut and ErrQRTimeout when a new pairing is
@@ -139,6 +142,7 @@ var (
 	ErrNoMedia         = client.ErrNoMedia
 	ErrNoPicture       = client.ErrNoPicture
 	ErrRateLimited     = client.ErrRateLimited
+	ErrNotSticker      = client.ErrNotSticker
 	// ErrNotRunning means Run has not been called yet.
 	ErrNotRunning = errors.New("wax: client is not running")
 )
@@ -364,6 +368,16 @@ func (c *Client) Profile(ctx context.Context, user JID) (*UserProfile, error) {
 		return nil, err
 	}
 	return cl.Profile(ctx, user)
+}
+
+// CheckPhone reports whether a phone number (international format) has
+// a WhatsApp account. Lookups share Profile's limit (ErrRateLimited).
+func (c *Client) CheckPhone(ctx context.Context, phone string) (PhoneCheck, error) {
+	cl, err := c.active()
+	if err != nil {
+		return PhoneCheck{}, err
+	}
+	return cl.CheckPhone(ctx, phone)
 }
 
 // ProfilePicture returns the small profile picture of a user or group

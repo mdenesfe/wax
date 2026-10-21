@@ -140,6 +140,23 @@ type AppStateChange struct {
 	FromFullSync bool
 }
 
+// ChatUpdate reports a chat's archive, pin or read state as the phone set
+// it: from app state (live, or a full sync after linking) or from history
+// sync. Only the fields that the change carries are set. Chat is the chat
+// as WhatsApp names it (a phone number or LID JID); ChatAlt is its other
+// address, when known.
+type ChatUpdate struct {
+	Chat, ChatAlt    wabin.JID
+	Archived, Pinned *bool
+	// Read is true when the chat was marked read, false when it was
+	// marked unread.
+	Read      *bool
+	Timestamp time.Time
+	// FromHistory marks values from history sync (the state when the
+	// account was linked); FromFullSync values from a full app state sync.
+	FromHistory, FromFullSync bool
+}
+
 // AppStateSyncComplete reports a finished full sync of a collection.
 type AppStateSyncComplete struct {
 	Collection string
@@ -177,6 +194,7 @@ type AccountSync struct{ Changes []string }
 
 func (AppStateChange) eventName() string       { return "appstate_change" }
 func (AppStateSyncComplete) eventName() string { return "appstate_sync_complete" }
+func (ChatUpdate) eventName() string           { return "chat_update" }
 func (AppStateSyncError) eventName() string    { return "appstate_sync_error" }
 func (AppStateUnverified) eventName() string   { return "appstate_unverified" }
 func (HistorySync) eventName() string          { return "history_sync" }

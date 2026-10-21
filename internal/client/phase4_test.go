@@ -2,9 +2,11 @@ package client
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -391,5 +393,42 @@ func TestSendAndDownloadMedia(t *testing.T) {
 	must(t, err)
 	if !bytes.Equal(data, photo) {
 		t.Fatal("client.Download returned different bytes")
+	}
+
+	// A sticker: a WebP image, with its size and animation flag read from
+	// the file. Devices and sessions are known now.
+	if _, err := h.client.SendMedia(h.ctx, bobLID, SendMediaRequest{Kind: KindSticker, Data: photo}); !errors.Is(err, ErrNotSticker) {
+		t.Fatalf("a JPEG sent as a sticker: %v", err)
+	}
+	webp, err := os.ReadFile("../media/testdata/animated.webp")
+	must(t, err)
+	go func() {
+		_, err := h.client.SendMedia(h.ctx, bobLID, SendMediaRequest{Kind: KindSticker, Data: webp, MimeType: "image/webp"})
+		done <- err
+	}()
+	n, err := c.ReadUntil(h.ctx, func(n *wabin.Node) bool { return n.Tag == "message" })
+	must(t, err)
+	parts, _ = n.Child("participants")
+	var st *wae2e.StickerMessage
+	for _, to := range parts.ChildrenByTag("to") {
+		if jid, _ := to.AttrJID("jid"); jid.User == bobLID.User {
+			enc, _ := to.Child("enc")
+			if enc.Attrs["mediatype"] != "sticker" {
+				t.Fatalf("enc mediatype %v", enc.Attrs["mediatype"])
+			}
+			st = bob.decrypt(t, signalAddress(wabin.JID{User: ownLID.User, Device: 12, Server: wabin.ServerLID}), enc).GetStickerMessage()
+		}
+	}
+	if st == nil || st.GetMimetype() != "image/webp" || st.GetWidth() != 64 || st.GetHeight() != 48 || !st.GetIsAnimated() ||
+		st.GetFileLength() != uint64(len(webp)) {
+		t.Fatalf("sticker message %v", st)
+	}
+	id, _ = n.AttrString("id")
+	must(t, c.Send(h.ctx, wabin.Node{Tag: "ack", Attrs: wabin.Attrs{"class": "message", "id": id, "t": "1700000002"}}))
+	must(t, <-done)
+	got, err = h.client.Download(h.ctx, &wae2e.Message{StickerMessage: st})
+	must(t, err)
+	if !bytes.Equal(got, webp) {
+		t.Fatal("downloaded sticker differs")
 	}
 }

@@ -9,7 +9,7 @@ master key.
 wax has two sources of configuration, and they never overlap:
 
 - **Environment variables carry secrets only:** `WAX_API_KEY`,
-  `WAX_MASTER_KEY` and `WAX_DATABASE_URL`. Keeping them out of the command
+  `WAX_MASTER_KEY`, `WAX_DATABASE_URL` and `WAX_TENANTS`. Keeping them out of the command
   line means they never show up in shell history or `ps` output.
 - **Flags carry everything else.**
 
@@ -18,6 +18,7 @@ wax has two sources of configuration, and they never overlap:
 | `WAX_API_KEY` | `serve` only | Admin bearer token, at least 32 characters (`openssl rand -hex 32`). The server refuses to start with a shorter one. |
 | `WAX_MASTER_KEY` | yes | 32 bytes, base64 (`openssl rand -base64 32`; standard or URL-safe, padded or not). |
 | `WAX_DATABASE_URL` | no | PostgreSQL DSN. Default: `postgres://wax:wax@127.0.0.1:5433/wax?sslmode=disable` (the compose database). |
+| `WAX_TENANTS` | no | `serve` only. Tenants and keys to set up at start, `tenant:key` entries separated by commas: `acme:wax_<id>_<secret>,other:wax_<id>_<secret>`. See [Provisioning tenants from the environment](#provisioning-tenants-from-the-environment). |
 
 ## `wax serve` flags
 
@@ -77,6 +78,31 @@ database on every request.
 
 Instances that existed before tenants were introduced were moved to a
 tenant called `default` by the migration.
+
+### Provisioning tenants from the environment
+
+A deployment that must come up from an empty database without manual
+steps can define its tenants and keys in `WAX_TENANTS`. At start, each
+node creates the tenants that do not exist (default limits, name equal to
+the id) and registers the keys:
+
+```bash
+KEY=$(wax keygen)                    # or: docker run --rm ghcr.io/mdenesfe/wax keygen
+WAX_TENANTS="hq:$KEY" wax serve      # give the same $KEY to the application
+```
+
+`wax keygen` prints a new key in the usual form `wax_<id>_<secret>`; any key
+of that form works, so a setup script can also create one itself (16 hex
+digits for the id, 32 random bytes in unpadded base64url for the secret).
+
+- Starting again with the same value changes nothing, so every node of a
+  cluster can carry it.
+- A key id that already belongs to another tenant stops the server with an
+  error; the same id for the same tenant with another secret replaces the
+  secret.
+- Removing an entry does not revoke its key; revoke it through the API.
+- A malformed entry stops the server; the error names the entry by its
+  position, never by its content.
 
 ## Resource isolation
 

@@ -261,10 +261,21 @@ section of `GET /openapi.json`.
 | `message` | A message was received, or sent from another device of the same account (`from_me: true`). Includes reactions and protocol messages. | `id`, `chat`, `sender`, `sender_alt`, `from_me`, `is_group`, `push_name`, `timestamp`, `type`, `text`, `media` (with a `download` API path), `reaction`, `quoted_id`, `quoted`, `mentions`, `forwarded`, `forwarding_score`, `view_once`, `raw` (the decrypted protobuf as protojson), `source` (`live`) |
 | `undecryptable_message` | A message could not be decrypted; wax has asked the sender to retry, so the message often follows as a `message` event. | `id`, `chat`, `sender`, `error` |
 | `receipt` | Delivery or read receipts for messages. | `ids`, `chat`, `sender`, `type` (`delivered` when empty on the wire, otherwise WhatsApp's receipt type such as `read`), `timestamp` |
-| `send_status` | An outbox item was sent or finally failed. | `outbox_id`, `client_id`, `message_id`, `chat`, `status` (`sent` or `failed`), `timestamp` (sent) or `error` (failed) |
+| `send_status` | An outbox item was sent or finally failed. | `outbox_id`, `client_id`, `message_id`, `chat`, `status` (`sent` or `failed`), `timestamp` (sent) or `code` and `error` (failed) |
 
 In a `message` event, `type` is one of `text`, `reaction`, `protocol`,
 `image`, `video`, `audio`, `voice`, `document` or `sticker`.
+
+A failed `send_status` carries a stable `code` for programs, and `error`
+with the details for people:
+
+| `code` | Meaning |
+|---|---|
+| `not_on_whatsapp` | The number has no WhatsApp account. |
+| `invalid_recipient` | Not a user or group JID, or a chat that cannot be sent to (broadcast lists). |
+| `server_rejected` | WhatsApp refused the message. |
+| `invalid_message` | The message cannot be built, for example a sticker that is not WebP. |
+| `retries_exhausted` | Temporary errors (network, timeouts) until the outbox gave up. |
 
 ### Pairing and connection
 
@@ -297,3 +308,18 @@ In a `message` event, `type` is one of `text`, `reaction`, `protocol`,
 | `history_sync` | A chunk of chat history from the phone was stored (it is then available through the chats and messages endpoints). | `type`, `chunk`, `progress`, `conversations`, `messages`, `push_names` |
 | `app_state_error` | An app state collection (contacts, chat settings and so on) failed to sync. | `collection`, `error` |
 | `app_state_unverified` | An app state collection's overall hash cannot be verified, although each record is authenticated. The phone is asked for its authoritative copy (at most hourly); a successful recovery restores full verification. Sent once per collection. | `collection`, `version` |
+| `chat_update` | A chat was archived, pinned or marked read on the phone (or the reverse). Only the settings the change carries are present. | `chat`, `chat_alt`, `archived`, `pinned`, `read`, `timestamp`, `source`, `full_sync` |
+
+`chat_update` comes from two sources (`source`):
+
+- `app_state`: a change made on the phone, or, right after linking, the
+  full sync of the phone's settings (`full_sync: true`, one event per chat
+  setting). `read: false` means the chat was marked unread. `timestamp` is
+  when the change was made on the phone.
+- `history`: the state of the chats in history sync, sent for archived or
+  pinned chats only (others are neither). The value is the one stored after
+  the chunk, so a newer change from app state wins.
+
+`chat` is the chat as WhatsApp names it, which may be a LID
+(`...@lid`); `chat_alt` is its other address (the phone number JID for a
+LID and the reverse) when wax knows it.

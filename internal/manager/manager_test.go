@@ -5,10 +5,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -104,7 +106,7 @@ func TestWebhookEventsListed(t *testing.T) {
 		client.QRCode{}, client.QRTimeout{}, client.PairSuccess{}, client.PairError{Err: errors.New("x")}, client.Connected{},
 		client.Disconnected{}, client.LoggedOut{}, client.StreamReplaced{}, client.ClientOutdated{}, client.CallEvent{},
 		client.Presence{}, client.ChatPresence{}, client.GroupUpdate{}, client.HistorySync{}, client.IdentityChanged{},
-		client.AppStateSyncError{Err: errors.New("x")}, client.AppStateUnverified{},
+		client.AppStateSyncError{Err: errors.New("x")}, client.AppStateUnverified{}, client.ChatUpdate{},
 	}
 	seen := map[string]bool{"send_status": true} // emitted by the outbox, not toWebhook
 	for _, e := range events {
@@ -122,5 +124,42 @@ func TestWebhookEventsListed(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("WebhookEvents lists %q, which nothing produces", name)
 		}
+	}
+}
+
+// TestFailureCode: final send errors map to stable codes.
+func TestFailureCode(t *testing.T) {
+	for err, want := range map[error]string{
+		fmt.Errorf("x: %w", client.ErrNotOnWhatsApp):   FailNotOnWhatsApp,
+		fmt.Errorf("x: %w", wabin.ErrInvalidJID):       FailInvalidRecipient,
+		fmt.Errorf("x: %w", client.ErrUnsupportedChat): FailInvalidRecipient,
+		fmt.Errorf("x: %w", client.ErrServerRejected):  FailServerRejected,
+		fmt.Errorf("x: %w", errInvalidItem):            FailInvalidMessage,
+		fmt.Errorf("x: %w", client.ErrNotSticker):      FailInvalidMessage,
+		errors.New("timeout"):                          FailRetriesExhausted,
+	} {
+		if got := failureCode(err); got != want {
+			t.Errorf("%v: %s, want %s", err, got, want)
+		}
+	}
+}
+
+// TestChatUpdateJSON: only the settings a change carries are present.
+func TestChatUpdateJSON(t *testing.T) {
+	archived := true
+	chat := wabin.JID{User: "905550000002", Server: wabin.ServerUser}
+	_, data, _ := toWebhook("inst", client.ChatUpdate{Chat: chat, Archived: &archived, Timestamp: time.Unix(1700000000, 0)})
+	b, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"chat":"905550000002@s.whatsapp.net","archived":true,"timestamp":"2023-11-14T22:13:20Z","source":"app_state"}`
+	if string(b) != want {
+		t.Fatalf("got  %s\nwant %s", b, want)
+	}
+	read := false
+	_, data, _ = toWebhook("inst", client.ChatUpdate{Chat: chat, Read: &read, FromHistory: true})
+	if b, _ = json.Marshal(data); string(b) != `{"chat":"905550000002@s.whatsapp.net","read":false,"source":"history"}` {
+		t.Fatalf("got %s", b)
 	}
 }

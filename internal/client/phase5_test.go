@@ -191,6 +191,7 @@ func TestAppStateAndHistorySync(t *testing.T) {
 		{[]string{"contact", bobPN.String()}, &wasyncaction.SyncActionValue{Timestamp: ts, ContactAction: &wasyncaction.ContactAction{FirstName: proto.String("Bob"), FullName: proto.String("Bob Test")}}},
 		{[]string{"mute", bobPN.String()}, &wasyncaction.SyncActionValue{Timestamp: ts, MuteAction: &wasyncaction.MuteAction{Muted: proto.Bool(true), MuteEndTimestamp: proto.Int64(-1)}}},
 		{[]string{"setting_pushName"}, &wasyncaction.SyncActionValue{Timestamp: ts, PushNameSetting: &wasyncaction.PushNameSetting{Name: proto.String("Wax Test")}}},
+		{[]string{"archive", bobPN.String()}, &wasyncaction.SyncActionValue{Timestamp: ts, ArchiveChatAction: &wasyncaction.ArchiveChatAction{Archived: proto.Bool(true)}}},
 	}
 	phoneMACs := &memMACs{keys: map[string][]byte{string(ss.keyID): ss.keyData}, macs: map[string][]byte{}}
 	var srecs []*waserversync.SyncdRecord
@@ -243,12 +244,23 @@ func TestAppStateAndHistorySync(t *testing.T) {
 	if name, _ := h.client.pushName.Load().(string); name != "Wax Test" {
 		t.Fatalf("push name %q", name)
 	}
+	// The archive setting is reported, as part of the full sync.
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Archived == nil || !*u.Archived || u.Pinned != nil || u.Read != nil ||
+		!u.FromFullSync || u.FromHistory || !u.Timestamp.Equal(time.UnixMilli(*ts)) {
+		t.Fatalf("chat update from the snapshot %+v", u)
+	}
 
-	// 3. A patch (unmute) announced by server_sync.
+	// 3. A patch (unmute, pin, mark unread) announced by server_sync.
 	m, err := appstate.EncodeMutation(waserversync.SyncdMutation_SET, []string{"mute", bobPN.String()},
 		&wasyncaction.SyncActionValue{Timestamp: ts, MuteAction: &wasyncaction.MuteAction{Muted: proto.Bool(false)}}, 2, ss.keyID, ss.keyData)
 	must(t, err)
-	patch, _, err := appstate.SealPatch(appstate.Regular, state, []*waserversync.SyncdMutation{m}, phoneMACs, ss.keyID, ss.keyData)
+	pin, err := appstate.EncodeMutation(waserversync.SyncdMutation_SET, []string{"pin_v1", bobPN.String()},
+		&wasyncaction.SyncActionValue{Timestamp: ts, PinAction: &wasyncaction.PinAction{Pinned: proto.Bool(true)}}, 2, ss.keyID, ss.keyData)
+	must(t, err)
+	unread, err := appstate.EncodeMutation(waserversync.SyncdMutation_SET, []string{"markChatAsRead", bobPN.String()},
+		&wasyncaction.SyncActionValue{Timestamp: ts, MarkChatAsReadAction: &wasyncaction.MarkChatAsReadAction{Read: proto.Bool(false)}}, 2, ss.keyID, ss.keyData)
+	must(t, err)
+	patch, _, err := appstate.SealPatch(appstate.Regular, state, []*waserversync.SyncdMutation{m, pin, unread}, phoneMACs, ss.keyID, ss.keyData)
 	must(t, err)
 	ss.patches = []*waserversync.SyncdPatch{patch}
 	ss.version = 4
@@ -269,13 +281,19 @@ func TestAppStateAndHistorySync(t *testing.T) {
 	if chat, _ := h.store.GetChat(h.ctx, h.inst, bobPN.String()); chat.MutedUntil != nil {
 		t.Fatalf("still muted until %v", chat.MutedUntil)
 	}
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Pinned == nil || !*u.Pinned || u.Archived != nil || u.FromFullSync {
+		t.Fatalf("chat update for the pin %+v", u)
+	}
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobPN || u.Read == nil || *u.Read || u.Pinned != nil {
+		t.Fatalf("chat update for marking unread %+v", u)
+	}
 
 	// 4. History sync with an inline payload.
 	hs := &wahistorysync.HistorySync{
 		SyncType:   wahistorysync.HistorySync_INITIAL_BOOTSTRAP.Enum(),
 		ChunkOrder: proto.Uint32(1),
 		Conversations: []*wahistorysync.Conversation{{
-			ID: proto.String(bobLID.String()), Name: proto.String("Bob"), UnreadCount: proto.Uint32(2),
+			ID: proto.String(bobLID.String()), Name: proto.String("Bob"), UnreadCount: proto.Uint32(2), Archived: proto.Bool(true),
 			ConversationTimestamp: proto.Uint64(1690000000),
 			Messages: []*wahistorysync.HistorySyncMsg{
 				{Message: &wahistorysync.WebMessageInfo{Key: &wae2e.MessageKey{RemoteJID: proto.String(bobLID.String()), ID: proto.String("H1")},
@@ -315,6 +333,10 @@ func TestAppStateAndHistorySync(t *testing.T) {
 	}
 	if queued, _ := h.store.HistoryQueueLength(h.ctx, h.inst); queued != 0 {
 		t.Fatalf("%d history jobs left", queued)
+	}
+	// The archived conversation of the history is reported.
+	if u := waitEvent[ChatUpdate](h); u.Chat != bobLID || !u.FromHistory || u.Archived == nil || !*u.Archived || u.Pinned == nil || *u.Pinned {
+		t.Fatalf("chat update from history %+v", u)
 	}
 }
 

@@ -107,6 +107,7 @@ func (s *Server) routeTable() []route {
 		{pattern: "PATCH /v1/instances/{id}", instance: s.updateInstance},
 		{pattern: "DELETE /v1/instances/{id}", instance: s.deleteInstance},
 		{pattern: "POST /v1/instances/{id}/connect", instance: s.connect},
+		{pattern: "POST /v1/instances/{id}/stop", instance: s.stopInstance},
 		{pattern: "GET /v1/instances/{id}/qr", instance: s.qr},
 		{pattern: "POST /v1/instances/{id}/messages", instance: s.sendMessage},
 		{pattern: "GET /v1/instances/{id}/outbox/{oid}", instance: s.outboxStatus},
@@ -118,6 +119,7 @@ func (s *Server) routeTable() []route {
 		{pattern: "GET /v1/instances/{id}/groups", instance: s.listGroups},
 		{pattern: "POST /v1/instances/{id}/read", instance: s.markRead},
 		{pattern: "POST /v1/instances/{id}/presence", instance: s.presence},
+		{pattern: "POST /v1/instances/{id}/contacts/check", instance: s.checkPhones},
 		{pattern: "GET /v1/instances/{id}/groups/{group}", instance: s.groupInfo},
 		{pattern: "POST /v1/instances/{id}/calls/{call}/reject", instance: s.rejectCall},
 	}

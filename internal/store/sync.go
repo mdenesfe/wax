@@ -200,6 +200,31 @@ func (s *Store) UpdateChat(ctx context.Context, instanceID, jid string, u ChatUp
 	return nil
 }
 
+// ChatState is a chat's archive and pin state.
+type ChatState struct {
+	Archived, Pinned bool
+}
+
+// ChatStates returns the archive and pin state of the given chats (chats
+// that are not stored are absent).
+func (s *Store) ChatStates(ctx context.Context, instanceID string, jids []string) (map[string]ChatState, error) {
+	rows, err := s.db.Query(ctx, `SELECT jid, archived, pinned FROM wax_chats WHERE instance_id = $1 AND jid = ANY($2)`, instanceID, jids)
+	if err != nil {
+		return nil, fmt.Errorf("store: chat states: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]ChatState{}
+	for rows.Next() {
+		var jid string
+		var st ChatState
+		if err := rows.Scan(&jid, &st.Archived, &st.Pinned); err != nil {
+			return nil, fmt.Errorf("store: chat states: %w", err)
+		}
+		out[jid] = st
+	}
+	return out, rows.Err()
+}
+
 // --- messages -----------------------------------------------------------------------
 
 const msgTable = "wax_messages"

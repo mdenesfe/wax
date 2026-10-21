@@ -229,10 +229,67 @@ func (c *Client) applyAppState(ctx context.Context, s *session, collection strin
 		return state, err
 	}
 	for _, m := range res.Mutations {
-		c.emit(AppStateChange{Collection: collection, Index: m.Index, Action: m.Action,
-			Removed: m.Operation == waserversync.SyncdMutation_REMOVE, FromFullSync: fullSync})
+		removed := m.Operation == waserversync.SyncdMutation_REMOVE
+		c.emit(AppStateChange{Collection: collection, Index: m.Index, Action: m.Action, Removed: removed, FromFullSync: fullSync})
+		if u, ok := c.chatUpdate(ctx, &m, removed); ok {
+			u.FromFullSync = fullSync
+			c.emit(u)
+		}
 	}
 	return res.State, nil
+}
+
+// chatUpdate describes an archive, pin or read mutation as a ChatUpdate.
+func (c *Client) chatUpdate(ctx context.Context, m *appstate.Mutation, removed bool) (ChatUpdate, bool) {
+	if removed || m.Action == nil || len(m.Index) < 2 {
+		return ChatUpdate{}, false
+	}
+	chat, err := wabin.ParseJID(m.Index[1])
+	if err != nil {
+		return ChatUpdate{}, false
+	}
+	u := ChatUpdate{Chat: chat}
+	a := m.Action
+	switch m.Index[0] {
+	case "archive":
+		v := a.GetArchiveChatAction().GetArchived()
+		u.Archived = &v
+	case "pin_v1":
+		v := a.GetPinAction().GetPinned()
+		u.Pinned = &v
+	case "markChatAsRead":
+		v := a.GetMarkChatAsReadAction().GetRead()
+		u.Read = &v
+	default:
+		return ChatUpdate{}, false
+	}
+	if ts := a.GetTimestamp(); ts > 0 {
+		u.Timestamp = time.UnixMilli(ts).UTC()
+	}
+	u.ChatAlt = c.altAddress(ctx, chat)
+	return u, true
+}
+
+// altAddress returns a user's other address (LID for a phone number JID
+// and the reverse) when the mapping is stored; an empty JID otherwise.
+func (c *Client) altAddress(ctx context.Context, j wabin.JID) wabin.JID {
+	var (
+		user   string
+		server string
+		err    error
+	)
+	switch j.Server {
+	case wabin.ServerUser:
+		user, err = c.cfg.Store.LIDForPN(ctx, c.cfg.InstanceID, j.User)
+		server = wabin.ServerLID
+	case wabin.ServerLID:
+		user, err = c.cfg.Store.PNForLID(ctx, c.cfg.InstanceID, j.User)
+		server = wabin.ServerUser
+	}
+	if err != nil || user == "" {
+		return wabin.JID{}
+	}
+	return wabin.JID{User: user, Server: server}
 }
 
 // applyMutation updates derived tables for one mutation.

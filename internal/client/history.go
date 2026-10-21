@@ -108,6 +108,7 @@ func (s *session) processNextHistory() (bool, error) {
 			s.log.Info("history sync chunk stored", "type", ev.Type, "chunk", ev.Chunk, "progress", ev.Progress,
 				"conversations", ev.Conversations, "messages", ev.Messages, "push_names", ev.PushNames)
 			c.emit(ev)
+			s.emitHistoryChatStates(hs)
 			return true, nil
 		}
 	}
@@ -120,6 +121,39 @@ func (s *session) processNextHistory() (bool, error) {
 	}
 	_ = c.cfg.Store.FailHistoryJob(ctx, job.ID, err.Error())
 	return true, err
+}
+
+// emitHistoryChatStates reports the archived and pinned chats of a stored
+// history chunk as ChatUpdate events. The values are read back from the
+// database: a setting app state already changed is newer than the
+// history's and wins (see store.ChatUpdate.FromHistory). Chats that are
+// neither archived nor pinned are not reported; that is the default.
+func (s *session) emitHistoryChatStates(hs *wahistorysync.HistorySync) {
+	c := s.c
+	var jids []string
+	for _, conv := range hs.GetConversations() {
+		if conv.GetID() != "" && (conv.GetArchived() || conv.GetPinned() > 0) {
+			jids = append(jids, conv.GetID())
+		}
+	}
+	if len(jids) == 0 {
+		return
+	}
+	states, err := c.cfg.Store.ChatStates(s.ctx, c.cfg.InstanceID, jids)
+	if err != nil {
+		s.log.Warn("could not read chat states for history events", "error", err)
+		return
+	}
+	for _, id := range jids {
+		st, ok := states[id]
+		chat, err := wabin.ParseJID(id)
+		if !ok || err != nil || (!st.Archived && !st.Pinned) {
+			continue
+		}
+		u := ChatUpdate{Chat: chat, ChatAlt: c.altAddress(s.ctx, chat), FromHistory: true}
+		u.Archived, u.Pinned = &st.Archived, &st.Pinned
+		c.emit(u)
+	}
 }
 
 // loadHistory fetches (inline or from the media server), inflates and

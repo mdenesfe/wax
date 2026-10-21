@@ -182,11 +182,9 @@ func (s *Store) DeleteAPIKey(ctx context.Context, tenantID, keyID string) error 
 // in the same query), or ErrInvalidAPIKey. Keys are checked against the
 // database on every call, so a revoked key stops working at once.
 func (s *Store) VerifyAPIKey(ctx context.Context, token string) (TenantAuth, error) {
-	rest, ok := strings.CutPrefix(token, apiKeyPrefix)
-	id, enc, ok2 := strings.Cut(rest, "_")
-	secret, err := base64.RawURLEncoding.DecodeString(enc)
-	if !ok || !ok2 || err != nil || len(secret) != 32 || len(id) != 16 {
-		return TenantAuth{}, ErrInvalidAPIKey
+	id, secret, err := parseAPIKey(token)
+	if err != nil {
+		return TenantAuth{}, err
 	}
 	a := TenantAuth{KeyID: id}
 	var mac []byte
@@ -202,6 +200,62 @@ func (s *Store) VerifyAPIKey(ctx context.Context, token string) (TenantAuth, err
 		return TenantAuth{}, ErrInvalidAPIKey
 	}
 	return a, nil
+}
+
+// parseAPIKey splits a tenant key wax_<id>_<secret> into its id (16 hex
+// digits) and its 32-byte secret.
+func parseAPIKey(token string) (id string, secret []byte, err error) {
+	rest, ok := strings.CutPrefix(token, apiKeyPrefix)
+	id, enc, ok2 := strings.Cut(rest, "_")
+	secret, derr := base64.RawURLEncoding.DecodeString(enc)
+	_, herr := hex.DecodeString(id)
+	if !ok || !ok2 || derr != nil || herr != nil || len(secret) != 32 || len(id) != 16 {
+		return "", nil, ErrInvalidAPIKey
+	}
+	return id, secret, nil
+}
+
+// NewAPIKey generates a tenant key (wax_<id>_<secret>) without storing
+// it, for setups that hand the same key to wax (EnsureTenantKey) and to
+// the application.
+func NewAPIKey() (string, error) {
+	var id [8]byte
+	var secret [32]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return "", err
+	}
+	if _, err := rand.Read(secret[:]); err != nil {
+		return "", err
+	}
+	return apiKeyPrefix + hex.EncodeToString(id[:]) + "_" + base64.RawURLEncoding.EncodeToString(secret[:]), nil
+}
+
+// EnsureTenantKey makes sure tenant exists (creating it with default
+// limits) and that token is one of its keys. It is idempotent: running it
+// again with the same values changes nothing. A key id that belongs to
+// another tenant is refused (ErrConflict); a key id of this tenant with
+// another secret is updated to this one.
+func (s *Store) EnsureTenantKey(ctx context.Context, tenant, token string) error {
+	id, secret, err := parseAPIKey(token)
+	if err != nil {
+		return err
+	}
+	return s.InTx(ctx, func(tx *Store) error {
+		if _, err := tx.db.Exec(ctx, `INSERT INTO wax_tenants (id, name) VALUES ($1, $1) ON CONFLICT (id) DO NOTHING`, tenant); err != nil {
+			return fmt.Errorf("store: ensure tenant: %w", err)
+		}
+		var owner string
+		err := tx.db.QueryRow(ctx, `INSERT INTO wax_api_keys (id, tenant_id, mac) VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO UPDATE SET mac = excluded.mac WHERE wax_api_keys.tenant_id = excluded.tenant_id
+			RETURNING tenant_id`, id, tenant, s.keyMAC(id, secret)).Scan(&owner)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: key %s belongs to another tenant", ErrConflict, id)
+		}
+		if err != nil {
+			return fmt.Errorf("store: ensure tenant key: %w", err)
+		}
+		return nil
+	})
 }
 
 // NodeMAC authenticates data exchanged between nodes (forwarded

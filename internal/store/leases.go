@@ -55,11 +55,11 @@ func (s *Store) DeleteNode(ctx context.Context, node string) error {
 }
 
 // ClusterSize returns the number of nodes that sent a heartbeat within
-// alive, and the number of instances.
+// alive, and the number of instances to run (stopped ones do not count).
 func (s *Store) ClusterSize(ctx context.Context, alive time.Duration) (nodes, instances int, err error) {
 	err = s.db.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM wax_nodes WHERE heartbeat_at > now() - make_interval(secs => $1)),
-		(SELECT count(*) FROM wax_instances)`, ttlSeconds(alive)).Scan(&nodes, &instances)
+		(SELECT count(*) FROM wax_instances WHERE NOT stopped)`, ttlSeconds(alive)).Scan(&nodes, &instances)
 	if err != nil {
 		return 0, 0, fmt.Errorf("store: cluster size: %w", err)
 	}
@@ -78,8 +78,8 @@ func (s *Store) RenewLeases(ctx context.Context, node string, ttl time.Duration)
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// AcquireLeases takes up to limit instances that have no live lease (only
-// the instance named by only, if it is not ""). Instances already locked by
+// AcquireLeases takes up to limit instances that have no live lease and
+// are not stopped (only the instance named by only, if it is not ""). Instances already locked by
 // another node's acquisition are skipped, and a lease is only taken over
 // once it has expired, so two nodes never own the same instance.
 func (s *Store) AcquireLeases(ctx context.Context, node, address string, ttl time.Duration, limit int, only string) ([]string, error) {
@@ -87,7 +87,7 @@ func (s *Store) AcquireLeases(ctx context.Context, node, address string, ttl tim
 		WITH candidates AS (
 			SELECT i.id FROM wax_instances i
 			LEFT JOIN wax_instance_leases l ON l.instance_id = i.id
-			WHERE (l.instance_id IS NULL OR l.expires_at <= now()) AND ($5 = '' OR i.id = $5)
+			WHERE (l.instance_id IS NULL OR l.expires_at <= now()) AND NOT i.stopped AND ($5 = '' OR i.id = $5)
 			ORDER BY i.id
 			LIMIT $4
 			FOR UPDATE OF i SKIP LOCKED
@@ -149,7 +149,7 @@ func (s *Store) LeaseOwner(ctx context.Context, instanceID string) (*Lease, erro
 // is not ""), with the state published by their owners.
 func (s *Store) InstanceViews(ctx context.Context, tenant, name string) ([]InstanceView, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT i.id, i.name, i.webhook_url, i.rate_per_minute, i.created_at,
+		SELECT i.id, i.name, i.webhook_url, i.rate_per_minute, i.created_at, i.stopped,
 		       COALESCE(l.status, ''), COALESCE(l.qr_pending, false), d.jid, d.lid
 		FROM wax_instances i
 		LEFT JOIN wax_instance_leases l ON l.instance_id = i.id AND l.expires_at > now()
@@ -162,7 +162,7 @@ func (s *Store) InstanceViews(ctx context.Context, tenant, name string) ([]Insta
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (InstanceView, error) {
 		v := InstanceView{Instance: Instance{TenantID: tenant}}
 		var jid, lid *string
-		err := r.Scan(&v.ID, &v.Name, &v.WebhookURL, &v.RatePerMinute, &v.CreatedAt, &v.Status, &v.QRPending, &jid, &lid)
+		err := r.Scan(&v.ID, &v.Name, &v.WebhookURL, &v.RatePerMinute, &v.CreatedAt, &v.Stopped, &v.Status, &v.QRPending, &jid, &lid)
 		if jid != nil {
 			v.JID = *jid
 		}

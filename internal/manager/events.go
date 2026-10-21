@@ -214,13 +214,41 @@ func jidStr(j wabin.JID) string {
 	return j.String()
 }
 
+// ChatUpdateJSON is the data of a chat_update webhook: only the settings
+// the change carries are present.
+type ChatUpdateJSON struct {
+	Chat     string     `json:"chat"`
+	ChatAlt  string     `json:"chat_alt,omitempty"`
+	Archived *bool      `json:"archived,omitempty"`
+	Pinned   *bool      `json:"pinned,omitempty"`
+	Read     *bool      `json:"read,omitempty"`
+	At       *time.Time `json:"timestamp,omitempty"`
+	// Source is "app_state" (a change on the phone, or the full sync
+	// after linking: then FullSync is true) or "history" (history sync).
+	Source   string `json:"source"`
+	FullSync bool   `json:"full_sync,omitempty"`
+}
+
+func describeChatUpdate(e client.ChatUpdate) ChatUpdateJSON {
+	out := ChatUpdateJSON{Chat: jidStr(e.Chat), ChatAlt: jidStr(e.ChatAlt), Archived: e.Archived, Pinned: e.Pinned, Read: e.Read,
+		Source: "app_state", FullSync: e.FromFullSync}
+	if e.FromHistory {
+		out.Source = "history"
+	}
+	if !e.Timestamp.IsZero() {
+		t := e.Timestamp.UTC()
+		out.At = &t
+	}
+	return out
+}
+
 // WebhookEvents lists every webhook event name, as documented in the
 // OpenAPI contract (api/openapi.json). Tests keep both in sync.
 var WebhookEvents = []string{
 	"message", "undecryptable_message", "receipt", "send_status",
 	"qr", "qr_timeout", "paired", "pair_error", "connected", "disconnected", "logged_out", "replaced", "client_outdated",
 	"call", "presence", "chat_presence", "group_update", "history_sync", "identity_changed",
-	"app_state_error", "app_state_unverified",
+	"app_state_error", "app_state_unverified", "chat_update",
 }
 
 // toWebhook converts a client event into (event name, data). ok is false
@@ -283,6 +311,8 @@ func toWebhook(instance string, e client.Event) (string, any, bool) {
 		return "app_state_error", map[string]any{"collection": e.Collection, "error": e.Err.Error()}, true
 	case client.AppStateUnverified:
 		return "app_state_unverified", map[string]any{"collection": e.Collection, "version": e.Version}, true
+	case client.ChatUpdate:
+		return "chat_update", describeChatUpdate(e), true
 	}
 	return "", nil, false
 }

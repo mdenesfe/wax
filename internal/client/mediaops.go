@@ -170,10 +170,14 @@ const (
 	KindAudio     MediaKind = "audio"
 	KindVoiceNote MediaKind = "voice"
 	KindDocument  MediaKind = "document"
+	KindSticker   MediaKind = "sticker" // a WebP image (image/webp)
 )
 
 var mediaTypes = map[MediaKind]media.Type{KindImage: media.Image, KindVideo: media.Video, KindAudio: media.Audio,
-	KindVoiceNote: media.Audio, KindDocument: media.Document}
+	KindVoiceNote: media.Audio, KindDocument: media.Document, KindSticker: media.Sticker}
+
+// ErrNotSticker means a sticker is not a WebP image.
+var ErrNotSticker = errors.New("client: a sticker must be a WebP image")
 
 // Valid reports whether k is a known media kind.
 func (k MediaKind) Valid() bool {
@@ -220,6 +224,17 @@ func (c *Client) SendMedia(ctx context.Context, to wabin.JID, req SendMediaReque
 	if !ok {
 		return nil, fmt.Errorf("client: unknown media kind %q", req.Kind)
 	}
+	var animated bool
+	if req.Kind == KindSticker {
+		w, h, anim, err := media.WebPInfo(req.Data)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrNotSticker, err)
+		}
+		if req.Width == 0 || req.Height == 0 {
+			req.Width, req.Height = w, h
+		}
+		animated = anim
+	}
 	up, err := c.Upload(ctx, req.Data, typ)
 	if err != nil {
 		return nil, fmt.Errorf("upload: %w", err)
@@ -248,6 +263,10 @@ func (c *Client) SendMedia(ctx context.Context, to wabin.JID, req SendMediaReque
 			FileSHA256: up.FileSHA256, FileEncSHA256: up.FileEncSHA256, FileLength: &up.FileLength,
 			Mimetype: proto.String(req.MimeType), FileName: proto.String(name), Title: proto.String(name),
 			Caption: optString(req.Caption), MediaKeyTimestamp: ts}
+	case KindSticker:
+		msg.StickerMessage = &wae2e.StickerMessage{URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
+			FileSHA256: up.FileSHA256, FileEncSHA256: up.FileEncSHA256, FileLength: &up.FileLength,
+			Mimetype: proto.String("image/webp"), MediaKeyTimestamp: ts, IsAnimated: proto.Bool(animated)}
 	}
 	addPreview(msg, &req)
 	SetContext(msg, req.Context)
@@ -269,6 +288,9 @@ func addPreview(msg *wae2e.Message, req *SendMediaRequest) {
 	case msg.VideoMessage != nil:
 		m := msg.VideoMessage
 		m.JPEGThumbnail, m.Width, m.Height, m.Seconds = req.Thumbnail, opt(req.Width), opt(req.Height), opt(req.Seconds)
+	case msg.StickerMessage != nil:
+		m := msg.StickerMessage
+		m.Width, m.Height = opt(req.Width), opt(req.Height)
 	case msg.AudioMessage != nil:
 		m := msg.AudioMessage
 		m.Seconds = opt(req.Seconds)

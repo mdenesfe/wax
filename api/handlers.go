@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -162,9 +163,21 @@ func (s *Server) deleteInstance(w http.ResponseWriter, r *http.Request, in *mana
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) connect(w http.ResponseWriter, _ *http.Request, in *manager.Instance) {
-	s.m.Connect(in)
+func (s *Server) connect(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	if err := s.m.Connect(r.Context(), in); err != nil {
+		s.fail(w, err)
+		return
+	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// stopInstance stops an instance without unlinking it; connect resumes it.
+func (s *Server) stopInstance(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	if err := s.m.StopInstance(r.Context(), in); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // qr returns the pending QR code as JSON, or as PNG with ?format=png.
@@ -248,7 +261,16 @@ func (m *mediaRequest) media() (*manager.MediaPayload, error) {
 		mp.Kind = client.KindForMIME(mp.MimeType)
 	}
 	if !mp.Kind.Valid() {
-		return nil, badRequest("media.kind must be image, video, audio, voice or document")
+		return nil, badRequest("media.kind must be image, video, audio, voice, document or sticker")
+	}
+	if mp.Kind == client.KindSticker {
+		if mp.Caption != "" || mp.FileName != "" {
+			return nil, badRequest("a sticker has no caption or file name")
+		}
+		if _, _, _, err := media.WebPInfo(raw); err != nil {
+			return nil, badRequest("a sticker must be a WebP image (image/webp)")
+		}
+		mp.MimeType = "image/webp"
 	}
 	if mp.Thumbnail, err = base64.StdEncoding.DecodeString(m.ThumbnailBase64); err != nil || len(mp.Thumbnail) > maxThumbnail {
 		return nil, badRequest("media.thumbnail_base64 must be base64 of at most 100 KiB")
@@ -632,6 +654,56 @@ func (s *Server) markRead(w http.ResponseWriter, r *http.Request, in *manager.In
 	}
 	sender, _ := wabin.ParseJID(req.Sender)
 	s.act(w, r, in, func(cl *client.Client) error { return cl.MarkRead(r.Context(), chat, sender, req.IDs, time.Now()) })
+}
+
+// maxPhoneChecks bounds one contacts/check request; WhatsApp allows only
+// a few lookups in a row.
+const maxPhoneChecks = 50
+
+// checkPhones reports which phone numbers have a WhatsApp account. When
+// WhatsApp asks to slow down, the request fails with 429 and nothing is
+// returned; numbers already known (stored LIDs) are answered without a
+// query.
+func (s *Server) checkPhones(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
+	var req phoneCheckRequest
+	if err := decode(r, &req); err != nil {
+		s.fail(w, err)
+		return
+	}
+	if len(req.Phones) == 0 || len(req.Phones) > maxPhoneChecks {
+		s.fail(w, badRequest(fmt.Sprintf("phones must hold 1 to %d phone numbers", maxPhoneChecks)))
+		return
+	}
+	for _, p := range req.Phones {
+		if j, err := wabin.ParseRecipient(p); err != nil || j.Server != wabin.ServerUser {
+			s.fail(w, badRequest("phones must be phone numbers in international format (digits, optional leading +)"))
+			return
+		}
+	}
+	cl, err := connected(in)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := make([]phoneCheckJSON, 0, len(req.Phones))
+	for _, p := range req.Phones {
+		res, err := cl.CheckPhone(r.Context(), p)
+		if errors.Is(err, client.ErrRateLimited) {
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, errors.New("rate limited by WhatsApp: try again in a minute"))
+			return
+		}
+		if err != nil {
+			s.upstream(w, r, err)
+			return
+		}
+		pc := phoneCheckJSON{Phone: res.Phone, OnWhatsApp: res.OnWhatsApp}
+		if res.OnWhatsApp {
+			pc.JID, pc.LID = res.JID.String(), res.LID.String()
+		}
+		out = append(out, pc)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) presence(w http.ResponseWriter, r *http.Request, in *manager.Instance) {
