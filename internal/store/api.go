@@ -352,9 +352,13 @@ func (s *Store) NextWebhook(ctx context.Context, instance string) (*WebhookItem,
 }
 
 // MarkWebhook records a delivery result: delivered, retry at next, or dead.
+//
+// Only a pending row is updated: an attempt that ends after the row was
+// settled elsewhere (dropped because the webhook URL was removed) must
+// not bring it back.
 func (s *Store) MarkWebhook(ctx context.Context, id int64, status string, next time.Time, reason string) error {
-	_, err := s.db.Exec(ctx, `UPDATE wax_webhook_queue SET status = $2, attempts = attempts + 1, next_attempt_at = $3, last_error = $4 WHERE id = $1`,
-		id, status, next, reason)
+	_, err := s.db.Exec(ctx, `UPDATE wax_webhook_queue SET status = $2, attempts = attempts + 1, next_attempt_at = $3, last_error = $4
+		WHERE id = $1 AND status = 'pending'`, id, status, next, reason)
 	return err
 }
 

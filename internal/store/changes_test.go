@@ -163,3 +163,39 @@ func TestOutboxOrderPerChat(t *testing.T) {
 		t.Fatalf("next due %v, want A1's retry time", due)
 	}
 }
+
+// TestWebhookSettledStays: an attempt that ends after the URL was removed
+// (the event dropped) does not bring the event back.
+func TestWebhookSettledStays(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	id := testInstance(t)
+	tenant := fmt.Sprintf("t%d", time.Now().UnixNano())
+	if err := s.CreateTenant(ctx, &Tenant{ID: tenant}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateInstance(ctx, &Instance{ID: id, TenantID: tenant, Name: id}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = s.DeleteInstance(ctx, id)
+		_ = s.DeleteTenant(ctx, tenant)
+	})
+	if err := s.EnqueueWebhook(ctx, id, "presence", []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	it, _, err := s.NextWebhook(ctx, id) // an attempt starts
+	if err != nil || it == nil {
+		t.Fatalf("next: %v %v", it, err)
+	}
+	if _, err := s.RetargetWebhooks(ctx, id, true); err != nil { // the URL is removed meanwhile
+		t.Fatal(err)
+	}
+	if err := s.MarkWebhook(ctx, it.ID, "pending", time.Now(), "http 500"); err != nil { // the attempt fails
+		t.Fatal(err)
+	}
+	d, err := s.QueueDepths(ctx, []string{id})
+	if err != nil || d[id].Webhooks != 0 {
+		t.Fatalf("pending after removal: %+v, %v", d[id], err)
+	}
+}

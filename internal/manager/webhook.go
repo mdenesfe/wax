@@ -151,6 +151,9 @@ func (in *Instance) deliverOne(ctx context.Context) (time.Duration, error) {
 	}
 	in.m.met.hooks.Inc(in.TenantID, in.Name, "retry")
 	delay := tm.WebhookRetry.Delay(it.Attempts + 1)
+	if in.config().WebhookURL != cfg.WebhookURL {
+		delay = 0 // the URL changed during the attempt: try the new one now
+	}
 	if merr := st.MarkWebhook(ctx, it.ID, "pending", time.Now().Add(delay), err.Error()); merr != nil {
 		return delay, errors.Join(err, merr)
 	}
