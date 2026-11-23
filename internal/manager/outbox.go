@@ -65,6 +65,7 @@ const (
 	FailNotOnWhatsApp    = "not_on_whatsapp"   // the number has no WhatsApp account
 	FailInvalidRecipient = "invalid_recipient" // not a user or group JID, or a chat type that cannot be sent to (broadcast lists)
 	FailServerRejected   = "server_rejected"   // WhatsApp refused the message
+	FailReachOutLimited  = "reachout_limited"  // WhatsApp refused it: the account reached its limit for messaging new people
 	FailInvalidMessage   = "invalid_message"   // the message cannot be built (for example a sticker that is not WebP)
 	FailRetriesExhausted = "retries_exhausted" // temporary errors until the outbox gave up
 )
@@ -76,6 +77,8 @@ func failureCode(err error) string {
 		return FailNotOnWhatsApp
 	case errors.Is(err, wabin.ErrInvalidJID), errors.Is(err, client.ErrUnsupportedChat):
 		return FailInvalidRecipient
+	case errors.Is(err, client.ErrReachOutLimited):
+		return FailReachOutLimited
 	case errors.Is(err, client.ErrServerRejected):
 		return FailServerRejected
 	case errors.Is(err, errInvalidItem), errors.Is(err, client.ErrNotSticker):

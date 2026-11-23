@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/mdenesfe/wax/internal/cryptoutil"
 	"github.com/mdenesfe/wax/internal/keys"
 	"github.com/mdenesfe/wax/internal/signal"
 	"github.com/mdenesfe/wax/internal/testutil/fakewa"
@@ -215,6 +217,9 @@ func TestSendMessageAndRetry(t *testing.T) {
 	bob := newPeer(t, wabin.JID{User: bobLID.User, Device: 0, Server: wabin.ServerLID}, 4321)
 	ownLID := wabin.JID{User: "1" + testUser, Server: wabin.ServerLID}
 	myPhone := newPeer(t, wabin.JID{User: ownLID.User, Device: 0, Server: wabin.ServerLID}, 1111)
+	// The phone shared its NCT salt; we hold no privacy token of Bob.
+	salt := bytes.Repeat([]byte{7}, 32)
+	must(t, h.store.PutNCTSalt(h.ctx, h.inst, salt))
 
 	type sendRes struct {
 		r   *SendResult
@@ -271,12 +276,13 @@ func TestSendMessageAndRetry(t *testing.T) {
 	parts, _ := msg.Child("participants")
 	ourAddr := signalAddress(wabin.JID{User: ownLID.User, Device: 12, Server: wabin.ServerLID})
 	got := map[string]bool{}
+	var bobMsg *wae2e.Message
 	for _, to := range parts.ChildrenByTag("to") {
 		jid, _ := to.AttrJID("jid")
 		enc, _ := to.Child("enc")
 		switch jid.User {
 		case bobLID.User:
-			if bob.decrypt(t, ourAddr, enc).GetConversation() != "selam" {
+			if bobMsg = bob.decrypt(t, ourAddr, enc); bobMsg.GetConversation() != "selam" {
 				t.Fatal("bob got wrong text")
 			}
 		case ownLID.User:
@@ -289,6 +295,25 @@ func TestSendMessageAndRetry(t *testing.T) {
 	}
 	if !got[bobLID.User] || !got[ownLID.User] || len(got) != 2 {
 		t.Fatalf("unexpected participants: %v", got)
+	}
+	// Like WhatsApp Web: a message secret, a reporting token derived from
+	// it, and without a privacy token of Bob a cstoken from our NCT salt.
+	if len(bobMsg.GetMessageContextInfo().GetMessageSecret()) != 32 {
+		t.Fatalf("message secret missing: %v", bobMsg)
+	}
+	raw, err := proto.Marshal(bobMsg)
+	must(t, err)
+	want, ok := reportingNode(bobMsg, raw, msgID, ownLID, bobLID)
+	rep, has := msg.Child("reporting")
+	if !ok || !has || rep.String() != want.String() {
+		t.Fatalf("reporting %s, want %s", rep.String(), want.String())
+	}
+	cs, ok := msg.Child("cstoken")
+	if raw, _ := cs.Bytes(); !ok || !bytes.Equal(raw, cryptoutil.HMACSHA256(salt, []byte(bobLID.String()))) {
+		t.Fatalf("cstoken missing or wrong: %s", msg.String())
+	}
+	if _, ok := msg.Child("tctoken"); ok {
+		t.Fatal("tctoken without a token of Bob")
 	}
 	must(t, c.Send(h.ctx, wabin.Node{Tag: "ack", Attrs: wabin.Attrs{"class": "message", "id": msgID, "t": "1700000123", "from": bobLID}}))
 	res := <-done

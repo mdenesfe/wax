@@ -24,6 +24,11 @@ var (
 	ErrServerRejected  = errors.New("client: server rejected the message")
 	ErrUnsupportedChat = errors.New("client: unsupported chat type")
 	ErrNotOnWhatsApp   = errors.New("client: recipient is not on WhatsApp")
+	// ErrReachOutLimited accompanies ErrServerRejected when WhatsApp refused
+	// a message to someone the account has not talked to (ack error 463):
+	// the account reached its limit for messaging new people. Each further
+	// attempt deepens the restriction, so senders should stop, not retry.
+	ErrReachOutLimited = errors.New("client: limit for messaging new people reached")
 )
 
 // sendAckTimeout bounds the wait for the server's <ack> of a message.
@@ -85,6 +90,7 @@ func (c *Client) SendMessageWithID(ctx context.Context, to wabin.JID, msg *wae2e
 	if id == "" {
 		id = newMessageID(s.dev.JID)
 	}
+	msg = withMessageSecret(msg)
 	switch to.Server {
 	case wabin.ServerUser, wabin.ServerLID:
 		return c.sendDirect(ctx, s, to, id, msg)
@@ -146,15 +152,23 @@ func (c *Client) sendDirect(ctx context.Context, s *session, to wabin.JID, id st
 	if includeIdentity {
 		content = append(content, wabin.Node{Tag: "device-identity", Content: s.dev.Account})
 	}
+	if n, ok := reportingNode(msg, plaintext, id, ownUser, to); ok {
+		content = append(content, n)
+	}
 	if t := c.privacyToken(ctx, to); t != nil {
 		content = append(content, wabin.Node{Tag: "tctoken", Content: t})
+	} else if t := c.csToken(ctx, to); t != nil {
+		content = append(content, wabin.Node{Tag: "cstoken", Content: t})
 	}
 	res, err := s.sendMessageNode(ctx, wabin.Node{Tag: "message", Attrs: attrs, Content: content}, id, to)
 	if err != nil {
 		return res.result(), err
 	}
 	// Writing to someone gives them our privacy token (once a week).
-	s.goSafe("issue-privacy-token", func() { c.issueToken(s.ctx, s, to) })
+	// WhatsApp Web does not count edits and revokes as writing.
+	if msg.GetProtocolMessage() == nil {
+		s.goSafe("issue-privacy-token", func() { c.issueToken(s.ctx, s, to) })
+	}
 	c.storeLiveMessage(ctx, to, ownDevice, id, true, res.Timestamp, "", msg)
 	if res.phash != "" && res.phash != participantListHash(devices) {
 		s.log.Warn("server device list differs from ours; refreshing", "chat", wabin.MaskJID(to))
@@ -229,6 +243,9 @@ func (c *Client) sendGroup(ctx context.Context, s *session, group wabin.JID, id 
 	content = append(content, wabin.Node{Tag: "enc", Attrs: skAttrs, Content: skmsg})
 	if includeIdentity {
 		content = append(content, wabin.Node{Tag: "device-identity", Content: s.dev.Account})
+	}
+	if n, ok := reportingNode(msg, plaintext, id, ownUser, group); ok {
+		content = append(content, n)
 	}
 	res, err := s.sendMessageNode(ctx, wabin.Node{Tag: "message", Attrs: attrs, Content: content}, id, group)
 	if err != nil {
@@ -359,6 +376,9 @@ func (s *session) sendMessageNode(ctx context.Context, n wabin.Node, id string, 
 	}
 	res.phash, _ = ack.AttrString("phash")
 	if code, ok := ack.AttrString("error"); ok && code != "" && code != "0" {
+		if code == "463" {
+			return res, fmt.Errorf("%w: %w: error %s", ErrServerRejected, ErrReachOutLimited, code)
+		}
 		return res, fmt.Errorf("%w: error %s", ErrServerRejected, code)
 	}
 	return res, nil

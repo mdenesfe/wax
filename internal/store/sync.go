@@ -425,6 +425,19 @@ func (s *Store) PutNCTSalt(ctx context.Context, instanceID string, salt []byte) 
 	return err
 }
 
+// GetNCTSalt returns our NCT salt, or nil when the phone has not sent one.
+func (s *Store) GetNCTSalt(ctx context.Context, instanceID string) ([]byte, error) {
+	var enc []byte
+	err := s.db.QueryRow(ctx, `SELECT nct_salt FROM wax_devices WHERE instance_id = $1`, instanceID).Scan(&enc)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && enc == nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get nct salt: %w", err)
+	}
+	return s.sealer.open(enc, adFor(devTable, "nct_salt", instanceID))
+}
+
 // Contact is a stored contact.
 type Contact struct {
 	JID                           string

@@ -274,6 +274,7 @@ with the details for people:
 | `not_on_whatsapp` | The number has no WhatsApp account. |
 | `invalid_recipient` | Not a user or group JID, or a chat that cannot be sent to (broadcast lists). |
 | `server_rejected` | WhatsApp refused the message. |
+| `reachout_limited` | WhatsApp refused a message to someone the account has not talked to: it reached its limit for messaging new people. Stop sending to new people until the limit lifts; every further attempt extends it. |
 | `invalid_message` | The message cannot be built, for example a sticker that is not WebP. |
 | `retries_exhausted` | Temporary errors (network, timeouts) until the outbox gave up. |
 

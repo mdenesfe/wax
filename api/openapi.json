@@ -3428,10 +3428,11 @@
                               "not_on_whatsapp",
                               "invalid_recipient",
                               "server_rejected",
+                              "reachout_limited",
                               "invalid_message",
                               "retries_exhausted"
                             ],
-                            "description": "Why the send failed (status failed only): not_on_whatsapp, the number has no account; invalid_recipient, not a user or group JID or a chat type that cannot be sent to; server_rejected, WhatsApp refused it; invalid_message, the message cannot be built; retries_exhausted, temporary errors until the outbox gave up. error has the details."
+                            "description": "Why the send failed (status failed only): not_on_whatsapp, the number has no account; invalid_recipient, not a user or group JID or a chat type that cannot be sent to; server_rejected, WhatsApp refused it; reachout_limited, WhatsApp refused it because the account reached its limit for messaging new people (stop sending to new people); invalid_message, the message cannot be built; retries_exhausted, temporary errors until the outbox gave up. error has the details."
                           },
                           "error": {
                             "type": "string"

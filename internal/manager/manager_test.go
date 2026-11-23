@@ -130,13 +130,14 @@ func TestWebhookEventsListed(t *testing.T) {
 // TestFailureCode: final send errors map to stable codes.
 func TestFailureCode(t *testing.T) {
 	for err, want := range map[error]string{
-		fmt.Errorf("x: %w", client.ErrNotOnWhatsApp):   FailNotOnWhatsApp,
-		fmt.Errorf("x: %w", wabin.ErrInvalidJID):       FailInvalidRecipient,
-		fmt.Errorf("x: %w", client.ErrUnsupportedChat): FailInvalidRecipient,
-		fmt.Errorf("x: %w", client.ErrServerRejected):  FailServerRejected,
-		fmt.Errorf("x: %w", errInvalidItem):            FailInvalidMessage,
-		fmt.Errorf("x: %w", client.ErrNotSticker):      FailInvalidMessage,
-		errors.New("timeout"):                          FailRetriesExhausted,
+		fmt.Errorf("x: %w", client.ErrNotOnWhatsApp):                                            FailNotOnWhatsApp,
+		fmt.Errorf("x: %w", wabin.ErrInvalidJID):                                                FailInvalidRecipient,
+		fmt.Errorf("x: %w", client.ErrUnsupportedChat):                                          FailInvalidRecipient,
+		fmt.Errorf("x: %w", client.ErrServerRejected):                                           FailServerRejected,
+		fmt.Errorf("x: %w: %w: error 463", client.ErrServerRejected, client.ErrReachOutLimited): FailReachOutLimited,
+		fmt.Errorf("x: %w", errInvalidItem):                                                     FailInvalidMessage,
+		fmt.Errorf("x: %w", client.ErrNotSticker):                                               FailInvalidMessage,
+		errors.New("timeout"):                                                                   FailRetriesExhausted,
 	} {
 		if got := failureCode(err); got != want {
 			t.Errorf("%v: %s, want %s", err, got, want)
