@@ -51,6 +51,7 @@ func (s *session) handleNode(n *wabin.Node) {
 	default:
 		s.log.Debug("ignoring unknown node", "tag", n.Tag)
 	}
+	s.countOfflineStanza(n)
 }
 
 func (s *session) handleIQ(n *wabin.Node) {
@@ -256,11 +257,44 @@ func (s *session) handleIB(n *wabin.Node) {
 		switch c.Tag {
 		case "offline_preview":
 			s.log.Info("offline queue preview", "attrs", c.String())
+			if count, _ := c.AttrInt("count"); count > 0 {
+				s.requestOfflineBatch()
+			}
 		case "offline":
+			s.offlinePending = false
 			s.log.Info("offline queue delivered", "attrs", c.String())
 		default:
 			s.log.Debug("ib child", "tag", c.Tag)
 		}
+	}
+}
+
+// offlineBatchSize is how many queued stanzas we ask for at a time, as
+// WhatsApp Web does. A variable so tests can use small batches.
+var offlineBatchSize = 100
+
+// requestOfflineBatch asks for the next batch of stanzas the server queued
+// while we were away. We log in with pull=true, so the server waits for this
+// request after its <offline_preview>: without it the queue, and every
+// message arriving behind it, is never delivered.
+func (s *session) requestOfflineBatch() {
+	s.offlinePending = true
+	s.offlineLeft = offlineBatchSize
+	s.sendOrLog(wabin.Node{Tag: "ib", Content: []wabin.Node{{Tag: "offline_batch", Attrs: wabin.Attrs{"count": offlineBatchSize}}}})
+}
+
+// countOfflineStanza asks for the next batch once the requested one has
+// arrived and the server has not reported the queue empty yet.
+func (s *session) countOfflineStanza(n *wabin.Node) {
+	if !s.offlinePending || s.replaying {
+		return
+	}
+	if _, ok := n.Attrs["offline"]; !ok {
+		return
+	}
+	s.offlineLeft--
+	if s.offlineLeft <= 0 {
+		s.requestOfflineBatch()
 	}
 }
 

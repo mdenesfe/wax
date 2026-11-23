@@ -68,6 +68,11 @@ type session struct {
 
 	// Set while replaying deferred stanzas (handler goroutine only).
 	replaying, redeferred bool
+
+	// Offline queue delivery (handler goroutine only): a batch was requested
+	// and offlineLeft of its stanzas have not arrived yet.
+	offlinePending bool
+	offlineLeft    int
 }
 
 // runSession connects once and serves the connection until it ends.
